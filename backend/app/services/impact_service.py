@@ -100,6 +100,20 @@ def _parse_value(target: object, field_name: str, value: object) -> object:
 
     if not isinstance(parsed, python_type) or (python_type is date and isinstance(parsed, datetime)):
         raise InvalidChangeValue(f"Invalid value for {field_name}")
+    if isinstance(target, Task):
+        allowed = {
+            "status": {"open", "todo", "in_progress", "blocked", "done", "cancelled"},
+            "priority": {"low", "medium", "high", "critical"},
+        }.get(field_name)
+        if allowed is not None and parsed not in allowed:
+            raise InvalidChangeValue(f"Invalid task {field_name}")
+    if isinstance(target, Risk):
+        allowed = {
+            "status": {"open", "monitoring", "mitigating", "mitigated", "closed"},
+            "severity": {"low", "medium", "high", "critical"},
+        }.get(field_name)
+        if allowed is not None and parsed not in allowed:
+            raise InvalidChangeValue(f"Invalid risk {field_name}")
     if isinstance(parsed, datetime) and isinstance(current_value, datetime):
         if (parsed.tzinfo is None) != (current_value.tzinfo is None):
             raise InvalidChangeValue(f"{field_name} must use the stored timezone format")
@@ -282,6 +296,11 @@ def process_change(
                 conflicts=conflicts,
                 impact=impact,
             )
+            from app.services.risk_service import ensure_conflict_risks
+            from app.services.task_service import generate_follow_up_tasks
+
+            ensure_conflict_risks(db, result)
+            generate_follow_up_tasks(db, result)
         logger.info(
             "Operational change committed: %s (%s conflicts, severity=%s)",
             result.change_id,

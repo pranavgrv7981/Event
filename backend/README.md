@@ -53,6 +53,10 @@ The script clears existing rows in dependency-safe table order before inserting 
 - `GET /events/{event_id}/changes` lists the event's change history.
 - `GET /changes/{change_id}` returns one recorded change.
 - `POST /changes/{change_id}/analyze` reconstructs verified impact from current database relationships and returns it separately from AI-generated analysis. The endpoint never stores AI output.
+- `GET /events/{event_id}/tasks`, `GET /tasks/{task_id}`, `POST /events/{event_id}/tasks`, and `PATCH /tasks/{task_id}` provide event-scoped task management.
+- `GET /changes/{change_id}/tasks` returns tasks attached to the change's affected sessions/venues; `GET /volunteers/{volunteer_id}/tasks` provides assigned tasks with session context.
+- `GET /events/{event_id}/risks`, `GET /risks/{risk_id}`, `POST /events/{event_id}/risks`, and `PATCH /risks/{risk_id}` provide event-scoped risk management. `GET /changes/{change_id}/risks` returns risks related through affected sessions and venues.
+- `GET /events/{event_id}/dashboard` reports live session/task/risk totals, recent changes, and currently detected conflicts.
 
 ## Database
 
@@ -71,6 +75,12 @@ Conflict checks supported by the current schema are venue schedule overlap, spea
 ## AI impact analysis
 
 Set `AI_PROVIDER=gemini` and provide `GEMINI_API_KEY` to enable Gemini analysis through Google's official `google-genai` SDK. Provider failures, missing credentials, malformed responses, and unsupported output fall back to deterministic local analysis. The API labels the verified backend impact separately from generated interpretation. No AI output is persisted.
+
+## Operational follow-ups
+
+Successful changes generate one deterministic follow-up per nonzero verified impact category, plus a session follow-up when the changed source is a session excluded from its own affected set. Generated tasks and conflict risks store a nullable direct `source_change_id`; an equivalent unresolved task for the same event and linked session (or venue when there is no session) is reused, and completed/cancelled tasks do not block a new follow-up. Risks are created only for confirmed venue, speaker, volunteer, or equipment conflicts, with severity assigned by a fixed backend mapping. Active risks are reused by event, conflict type, and related session or venue. Existing SQLite databases receive an additive migration for the nullable change links. Task/risk status values are lowercase to remain compatible with seeded records; `mitigating` remains accepted as a legacy risk status.
+
+Historical impact is not snapshotted. AI analysis and pre-existing related task/risk lookup use current affected relationships; changes to those relationships after the original change can affect reconstructed results. Generated task/risk records have direct change links, but they do not preserve a historical impact snapshot. Persisted snapshots are deferred to a later hardening phase.
 
 ## Tests
 

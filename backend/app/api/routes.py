@@ -3,7 +3,7 @@
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session, selectinload
 
@@ -17,10 +17,16 @@ from app.schemas import (
     ChangeRead,
     ChangeRequest,
     AIImpactAnalysisResponse,
+    EventDashboard,
+    RiskCreate,
+    RiskUpdate,
     RiskRead,
     SessionRead,
     SpeakerRead,
     TaskRead,
+    TaskCreate,
+    TaskUpdate,
+    TaskDetail,
     VenueRead,
     VerifiedImpactResponse,
     VolunteerRead,
@@ -42,6 +48,30 @@ from app.services.impact_service import (
 )
 from app.services.ai_impact_service import analyze_verified_impact
 from app.models import Change
+from app.services.risk_service import (
+    RiskEventNotFound,
+    RiskNotFound,
+    RiskOwnershipError,
+    RiskReferenceNotFound,
+    create_risk,
+    get_risk,
+    list_event_risks,
+    list_risks_for_change,
+    update_risk,
+)
+from app.services.task_service import (
+    TaskEventNotFound,
+    TaskNotFound,
+    TaskOwnershipError,
+    TaskReferenceNotFound,
+    create_task,
+    get_task,
+    list_event_tasks,
+    list_tasks_for_change,
+    list_volunteer_tasks,
+    update_task,
+)
+from app.services.conflict_service import detect_conflicts
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -102,6 +132,28 @@ def get_change(change_id: str, db: Session = Depends(get_db)) -> Change:
     if change is None:
         raise HTTPException(status_code=404, detail="Change not found")
     return change
+
+
+@router.get("/changes/{change_id}/tasks", response_model=list[TaskDetail])
+def get_change_tasks(change_id: str, db: Session = Depends(get_db)) -> list[Task]:
+    change = db.get(Change, change_id)
+    if change is None:
+        raise HTTPException(status_code=404, detail="Change not found")
+    try:
+        return list_tasks_for_change(db, reconstruct_verified_impact(db, change))
+    except (EntityNotFound, UnsupportedEntityType) as exc:
+        raise HTTPException(status_code=404, detail="Change target entity not found") from exc
+
+
+@router.get("/changes/{change_id}/risks", response_model=list[RiskRead])
+def get_change_risks(change_id: str, db: Session = Depends(get_db)) -> list[Risk]:
+    change = db.get(Change, change_id)
+    if change is None:
+        raise HTTPException(status_code=404, detail="Change not found")
+    try:
+        return list_risks_for_change(db, reconstruct_verified_impact(db, change))
+    except (EntityNotFound, UnsupportedEntityType) as exc:
+        raise HTTPException(status_code=404, detail="Change target entity not found") from exc
 
 
 @router.post("/changes/{change_id}/analyze", response_model=AIImpactAnalysisResponse)
@@ -202,3 +254,143 @@ def list_tasks(db: Session = Depends(get_db)) -> list[Task]:
 @router.get("/risks", response_model=list[RiskRead])
 def list_risks(db: Session = Depends(get_db)) -> list[Risk]:
     return list(db.scalars(select(Risk).order_by(Risk.severity, Risk.title)).all())
+
+
+@router.get("/events/{event_id}/tasks", response_model=list[TaskDetail])
+def get_event_tasks(event_id: str, db: Session = Depends(get_db)) -> list[Task]:
+    try:
+        return list_event_tasks(db, event_id)
+    except TaskEventNotFound as exc:
+        raise HTTPException(status_code=404, detail="Event not found") from exc
+
+
+@router.post("/events/{event_id}/tasks", response_model=TaskDetail, status_code=201)
+def post_event_task(event_id: str, request: TaskCreate, db: Session = Depends(get_db)) -> Task:
+    try:
+        return create_task(db, event_id, request)
+    except TaskEventNotFound as exc:
+        raise HTTPException(status_code=404, detail="Event not found") from exc
+    except TaskReferenceNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except TaskOwnershipError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.get("/tasks/{task_id}", response_model=TaskDetail)
+def get_one_task(task_id: str, db: Session = Depends(get_db)) -> Task:
+    try:
+        return get_task(db, task_id)
+    except TaskNotFound as exc:
+        raise HTTPException(status_code=404, detail="Task not found") from exc
+
+
+@router.patch("/tasks/{task_id}", response_model=TaskDetail)
+def patch_task(task_id: str, request: TaskUpdate, db: Session = Depends(get_db)) -> Task:
+    try:
+        return update_task(db, task_id, request)
+    except TaskNotFound as exc:
+        raise HTTPException(status_code=404, detail="Task not found") from exc
+    except TaskReferenceNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except (TaskOwnershipError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.get("/volunteers/{volunteer_id}/tasks", response_model=list[TaskDetail])
+def get_volunteer_tasks(volunteer_id: str, db: Session = Depends(get_db)) -> list[Task]:
+    try:
+        return list_volunteer_tasks(db, volunteer_id)
+    except TaskReferenceNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.get("/events/{event_id}/risks", response_model=list[RiskRead])
+def get_event_risks(event_id: str, db: Session = Depends(get_db)) -> list[Risk]:
+    try:
+        return list_event_risks(db, event_id)
+    except RiskEventNotFound as exc:
+        raise HTTPException(status_code=404, detail="Event not found") from exc
+
+
+@router.post("/events/{event_id}/risks", response_model=RiskRead, status_code=201)
+def post_event_risk(event_id: str, request: RiskCreate, db: Session = Depends(get_db)) -> Risk:
+    try:
+        return create_risk(db, event_id, request)
+    except RiskEventNotFound as exc:
+        raise HTTPException(status_code=404, detail="Event not found") from exc
+    except RiskReferenceNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except RiskOwnershipError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.get("/risks/{risk_id}", response_model=RiskRead)
+def get_one_risk(risk_id: str, db: Session = Depends(get_db)) -> Risk:
+    try:
+        return get_risk(db, risk_id)
+    except RiskNotFound as exc:
+        raise HTTPException(status_code=404, detail="Risk not found") from exc
+
+
+@router.patch("/risks/{risk_id}", response_model=RiskRead)
+def patch_risk(risk_id: str, request: RiskUpdate, db: Session = Depends(get_db)) -> Risk:
+    try:
+        return update_risk(db, risk_id, request)
+    except RiskNotFound as exc:
+        raise HTTPException(status_code=404, detail="Risk not found") from exc
+    except RiskReferenceNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except (RiskOwnershipError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.get("/events/{event_id}/dashboard", response_model=EventDashboard)
+def get_event_dashboard(event_id: str, db: Session = Depends(get_db)) -> EventDashboard:
+    event = db.get(Event, event_id)
+    if event is None:
+        raise HTTPException(status_code=404, detail="Event not found")
+
+    sessions = list(db.scalars(select(EventSession).where(EventSession.event_id == event_id)).all())
+    task_rows = list(db.scalars(select(Task).where(Task.event_id == event_id)).all())
+    risk_rows = list(db.scalars(select(Risk).where(Risk.event_id == event_id)).all())
+    changes = list(
+        db.scalars(
+            select(Change).where(Change.event_id == event_id)
+            .order_by(Change.created_at.desc(), Change.id.desc()).limit(5)
+        ).all()
+    )
+    conflicts_by_key = {}
+    for session in sessions:
+        for conflict in detect_conflicts(
+            db,
+            event_id=event_id,
+            entity_type="session",
+            entity=session,
+            field_name="venue_id",
+            new_value=session.venue_id,
+        ):
+            conflicts_by_key[(conflict.type, tuple(conflict.entity_ids))] = conflict
+
+    active_risks = [risk for risk in risk_rows if risk.status not in {"closed", "mitigated"}]
+    tasks = {
+        "total": len(task_rows),
+        "todo": sum(task.status in {"open", "todo"} for task in task_rows),
+        "in_progress": sum(task.status == "in_progress" for task in task_rows),
+        "blocked": sum(task.status == "blocked" for task in task_rows),
+        "done": sum(task.status == "done" for task in task_rows),
+        "cancelled": sum(task.status == "cancelled" for task in task_rows),
+    }
+    return EventDashboard(
+        event_id=event_id,
+        sessions={"total": len(sessions)},
+        tasks=tasks,
+        risks={
+            "total": len(risk_rows),
+            "open": sum(risk.status == "open" for risk in risk_rows),
+            "high": sum(
+                risk.severity in {"high", "critical"} for risk in active_risks
+            ),
+        },
+        recent_changes=changes,
+        active_conflicts=sorted(conflicts_by_key.values(), key=lambda item: (item.type, item.entity_ids)),
+    )

@@ -153,6 +153,9 @@ class Task(TimestampMixin, Base):
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     event_id: Mapped[str] = mapped_column(ForeignKey("events.id", ondelete="CASCADE"), index=True)
+    source_change_id: Mapped[str | None] = mapped_column(
+        ForeignKey("changes.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     title: Mapped[str] = mapped_column(String(200), nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="open")
@@ -169,6 +172,7 @@ class Task(TimestampMixin, Base):
     )
 
     event: Mapped[Event] = relationship(back_populates="tasks")
+    source_change: Mapped[Change | None] = relationship(back_populates="generated_tasks")
     assigned_volunteer: Mapped[Volunteer | None] = relationship(back_populates="tasks")
     session: Mapped[Session | None] = relationship(back_populates="tasks")
     venue: Mapped[Venue | None] = relationship(back_populates="tasks")
@@ -179,6 +183,9 @@ class Risk(TimestampMixin, Base):
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     event_id: Mapped[str] = mapped_column(ForeignKey("events.id", ondelete="CASCADE"), index=True)
+    source_change_id: Mapped[str | None] = mapped_column(
+        ForeignKey("changes.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     title: Mapped[str] = mapped_column(String(200), nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False)
     severity: Mapped[str] = mapped_column(String(32), nullable=False)
@@ -191,6 +198,7 @@ class Risk(TimestampMixin, Base):
     )
 
     event: Mapped[Event] = relationship(back_populates="risks")
+    source_change: Mapped[Change | None] = relationship(back_populates="generated_risks")
     venue: Mapped[Venue | None] = relationship(back_populates="risks")
     session: Mapped[Session | None] = relationship(back_populates="risks")
 
@@ -209,3 +217,5 @@ class Change(TimestampMixin, Base):
     created_by: Mapped[str | None] = mapped_column(String(160), nullable=True)
 
     event: Mapped[Event] = relationship(back_populates="changes")
+    generated_tasks: Mapped[list[Task]] = relationship(back_populates="source_change")
+    generated_risks: Mapped[list[Risk]] = relationship(back_populates="source_change")

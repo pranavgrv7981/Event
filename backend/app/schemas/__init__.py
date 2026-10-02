@@ -75,6 +75,7 @@ class SessionRead(ORMModel):
 class TaskRead(ORMModel):
     id: str
     event_id: str
+    source_change_id: str | None = None
     title: str
     description: str
     status: str
@@ -88,12 +89,120 @@ class TaskRead(ORMModel):
 class RiskRead(ORMModel):
     id: str
     event_id: str
+    source_change_id: str | None = None
     title: str
     description: str
     severity: str
     status: str
     venue_id: str | None
     session_id: str | None
+
+
+TaskStatus = Literal["open", "todo", "in_progress", "blocked", "done", "cancelled"]
+TaskPriority = Literal["low", "medium", "high", "critical"]
+RiskStatus = Literal["open", "monitoring", "mitigating", "mitigated", "closed"]
+RiskSeverity = Literal["low", "medium", "high", "critical"]
+
+
+class TaskCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    title: str = Field(min_length=1, max_length=200)
+    description: str = Field(min_length=1)
+    due_time: datetime
+    status: TaskStatus = "open"
+    priority: TaskPriority = "medium"
+    assigned_volunteer_id: str | None = None
+    session_id: str | None = None
+    venue_id: str | None = None
+
+    @field_validator("title", "description")
+    @classmethod
+    def nonblank_task_text(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("Task text cannot be blank")
+        return value.strip()
+
+
+class TaskUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    title: str | None = Field(default=None, min_length=1, max_length=200)
+    description: str | None = Field(default=None, min_length=1)
+    due_time: datetime | None = None
+    status: TaskStatus | None = None
+    priority: TaskPriority | None = None
+    assigned_volunteer_id: str | None = None
+    session_id: str | None = None
+    venue_id: str | None = None
+
+    @field_validator("title", "description")
+    @classmethod
+    def nonblank_optional_task_text(cls, value: str | None) -> str | None:
+        if value is not None and not value.strip():
+            raise ValueError("Task text cannot be blank")
+        return value.strip() if value is not None else None
+
+
+class TaskDetail(TaskRead):
+    session: SessionRead | None = None
+    venue: VenueRead | None = None
+    assigned_volunteer: VolunteerRead | None = None
+
+
+class RiskCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    title: str = Field(min_length=1, max_length=200)
+    description: str = Field(min_length=1)
+    severity: RiskSeverity
+    status: RiskStatus = "open"
+    venue_id: str | None = None
+    session_id: str | None = None
+
+    @field_validator("title", "description")
+    @classmethod
+    def nonblank_risk_text(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("Risk text cannot be blank")
+        return value.strip()
+
+
+class RiskUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    title: str | None = Field(default=None, min_length=1, max_length=200)
+    description: str | None = Field(default=None, min_length=1)
+    severity: RiskSeverity | None = None
+    status: RiskStatus | None = None
+    venue_id: str | None = None
+    session_id: str | None = None
+
+    @field_validator("title", "description")
+    @classmethod
+    def nonblank_optional_risk_text(cls, value: str | None) -> str | None:
+        if value is not None and not value.strip():
+            raise ValueError("Risk text cannot be blank")
+        return value.strip() if value is not None else None
+
+
+class TaskDashboard(BaseModel):
+    total: int
+    todo: int
+    in_progress: int
+    blocked: int
+    done: int
+    cancelled: int
+
+
+class RiskDashboard(BaseModel):
+    total: int
+    open: int
+    high: int
+
+
+class SessionDashboard(BaseModel):
+    total: int
 
 
 class EventDetail(EventRead):
@@ -172,6 +281,15 @@ class ConflictItem(BaseModel):
     severity: Literal["high", "medium"]
     message: str
     entity_ids: list[str]
+
+
+class EventDashboard(BaseModel):
+    event_id: str
+    sessions: SessionDashboard
+    tasks: TaskDashboard
+    risks: RiskDashboard
+    recent_changes: list[ChangeRead]
+    active_conflicts: list[ConflictItem]
 
 
 class ImpactCounts(BaseModel):
