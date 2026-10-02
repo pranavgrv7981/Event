@@ -7,3 +7,7 @@ backend/event.db
 .pytest_cache/
 venv/
 ENV/
+node_modules/
+dist/
+frontend/node_modules/
+frontend/dist/

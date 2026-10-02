@@ -1,0 +1,163 @@
+import React, { useState } from 'react';
+
+export function RiskPanel({ risks = [], onUpdateRiskStatus, isUpdating = false }) {
+  const [severityFilter, setSeverityFilter] = useState('all');
+  const [statusFilter, setStatusFilter] = useState('all');
+
+  const filteredRisks = risks.filter((r) => {
+    const matchesSev = severityFilter === 'all' || r.severity === severityFilter;
+    const matchesStatus = statusFilter === 'all' || r.status === statusFilter;
+    return matchesSev && matchesStatus;
+  });
+
+  const getSeverityBadge = (severity) => {
+    switch (severity) {
+      case 'critical': return 'rose';
+      case 'high': return 'rose';
+      case 'medium': return 'amber';
+      case 'low': return 'blue';
+      default: return 'neutral';
+    }
+  };
+
+  const getStatusBadge = (status) => {
+    switch (status) {
+      case 'open': return 'rose';
+      case 'monitoring': return 'amber';
+      case 'mitigating': return 'blue';
+      case 'mitigated':
+      case 'closed': return 'emerald';
+      default: return 'neutral';
+    }
+  };
+
+  return (
+    <div className="card">
+      <div className="card-header" style={{ flexWrap: 'wrap', gap: '12px' }}>
+        <div className="card-title">
+          <span>⚠️</span>
+          <span>Risk Register ({filteredRisks.length} / {risks.length})</span>
+        </div>
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+          <select
+            className="form-select"
+            value={severityFilter}
+            onChange={(e) => setSeverityFilter(e.target.value)}
+            style={{ width: '130px', padding: '5px 8px', fontSize: '12px' }}
+          >
+            <option value="all">All Severities</option>
+            <option value="critical">Critical</option>
+            <option value="high">High</option>
+            <option value="medium">Medium</option>
+            <option value="low">Low</option>
+          </select>
+          <select
+            className="form-select"
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+            style={{ width: '130px', padding: '5px 8px', fontSize: '12px' }}
+          >
+            <option value="all">All Statuses</option>
+            <option value="open">Open</option>
+            <option value="monitoring">Monitoring</option>
+            <option value="mitigating">Mitigating</option>
+            <option value="mitigated">Mitigated</option>
+            <option value="closed">Closed</option>
+          </select>
+        </div>
+      </div>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+        {filteredRisks.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '32px', color: 'var(--text-muted)', fontSize: '13px' }}>
+            No recorded operational risks match filters.
+          </div>
+        ) : (
+          filteredRisks.map((risk) => (
+            <div
+              key={risk.id}
+              style={{
+                backgroundColor: 'rgba(15, 23, 42, 0.7)',
+                border: '1px solid var(--border-subtle)',
+                borderRadius: '8px',
+                padding: '14px 16px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '8px',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '12px' }}>
+                <div>
+                  <div style={{ fontWeight: 600, fontSize: '13px', color: 'var(--text-primary)' }}>
+                    {risk.title}
+                  </div>
+                  <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginTop: '2px' }}>
+                    {risk.description}
+                  </div>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
+                  <span className={`badge ${getSeverityBadge(risk.severity)}`}>
+                    {risk.severity?.toUpperCase()} SEV
+                  </span>
+                  <span className={`badge ${getStatusBadge(risk.status)}`}>
+                    {risk.status?.toUpperCase()}
+                  </span>
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '10px', paddingTop: '6px', borderTop: '1px solid var(--border-subtle)', fontSize: '11px', color: 'var(--text-muted)' }}>
+                <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+                  {risk.session_id && <span>Session: <strong style={{ fontFamily: 'var(--font-mono)' }}>{risk.session_id}</strong></span>}
+                  {risk.venue_id && <span>Venue: <strong style={{ fontFamily: 'var(--font-mono)' }}>{risk.venue_id}</strong></span>}
+                  {risk.source_change_id && (
+                    <span className="badge neutral" style={{ fontSize: '10px' }}>
+                      Generated by {risk.source_change_id}
+                    </span>
+                  )}
+                </div>
+
+                {onUpdateRiskStatus && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <span style={{ fontSize: '10px', textTransform: 'uppercase' }}>Update:</span>
+                    {risk.status !== 'monitoring' && (
+                      <button
+                        className="btn btn-secondary btn-sm"
+                        disabled={isUpdating}
+                        onClick={() => onUpdateRiskStatus(risk.id, 'monitoring')}
+                        style={{ padding: '2px 6px', fontSize: '10px' }}
+                      >
+                        Monitoring
+                      </button>
+                    )}
+                    {risk.status !== 'mitigating' && (
+                      <button
+                        className="btn btn-secondary btn-sm"
+                        disabled={isUpdating}
+                        onClick={() => onUpdateRiskStatus(risk.id, 'mitigating')}
+                        style={{ padding: '2px 6px', fontSize: '10px' }}
+                      >
+                        Mitigating
+                      </button>
+                    )}
+                    {risk.status !== 'mitigated' && (
+                      <button
+                        className="btn btn-primary btn-sm"
+                        disabled={isUpdating}
+                        onClick={() => onUpdateRiskStatus(risk.id, 'mitigated')}
+                        style={{ padding: '2px 6px', fontSize: '10px', backgroundColor: 'var(--accent-emerald)', borderColor: 'var(--accent-emerald)' }}
+                      >
+                        Mitigated
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
+export default RiskPanel;
