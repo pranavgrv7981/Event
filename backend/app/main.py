@@ -5,6 +5,7 @@ from typing import AsyncIterator
 
 from fastapi import FastAPI
 
+from app.api.routes import router
 from app.database import initialize_database
 
 
@@ -18,6 +19,7 @@ app = FastAPI(
     title="Event Operations Command Center API",
     lifespan=lifespan,
 )
+app.include_router(router)
 
 
 @app.get("/")
