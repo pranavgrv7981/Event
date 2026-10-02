@@ -1,6 +1,9 @@
 """Basic read endpoints for seeded event operations data."""
 
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
@@ -10,6 +13,7 @@ from app.schemas import (
     EquipmentRead,
     EventDetail,
     EventRead,
+    DependencyResult,
     RiskRead,
     SessionRead,
     SpeakerRead,
@@ -17,8 +21,32 @@ from app.schemas import (
     VenueRead,
     VolunteerRead,
 )
+from app.services.dependency_engine import (
+    EntityNotFound,
+    InvalidEntityIdentifier,
+    UnsupportedEntityType,
+    get_affected_entities,
+)
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
+
+
+@router.get("/dependencies/{entity_type}/{entity_id}", response_model=DependencyResult)
+def get_dependencies(
+    entity_type: str, entity_id: str, db: Session = Depends(get_db)
+) -> DependencyResult:
+    try:
+        return get_affected_entities(db, entity_type, entity_id)
+    except UnsupportedEntityType as exc:
+        raise HTTPException(status_code=422, detail="Unsupported entity type") from exc
+    except InvalidEntityIdentifier as exc:
+        raise HTTPException(status_code=422, detail="Invalid entity identifier") from exc
+    except EntityNotFound as exc:
+        raise HTTPException(status_code=404, detail="Entity not found") from exc
+    except SQLAlchemyError as exc:
+        logger.exception("Dependency lookup failed for %s/%s", entity_type, entity_id)
+        raise HTTPException(status_code=500, detail="Dependency lookup failed") from exc
 
 
 @router.get("/events", response_model=list[EventRead])

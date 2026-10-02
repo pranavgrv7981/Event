@@ -1,6 +1,7 @@
 """Pydantic response schemas for the read API."""
 
 from datetime import date, datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -98,3 +99,34 @@ class RiskRead(ORMModel):
 class EventDetail(EventRead):
     venues: list[VenueRead] = Field(default_factory=list)
     sessions: list[SessionRead] = Field(default_factory=list)
+
+
+DependencyEntityType = Literal[
+    "event", "venue", "session", "speaker", "volunteer", "equipment", "task", "risk"
+]
+
+
+class DependencySource(BaseModel):
+    entity_type: DependencyEntityType
+    entity_id: str
+
+
+class EntityReference(BaseModel):
+    id: str
+    name: str
+
+
+class AffectedEntities(BaseModel):
+    events: list[EntityReference] = Field(default_factory=list)
+    venues: list[EntityReference] = Field(default_factory=list)
+    sessions: list[EntityReference] = Field(default_factory=list)
+    speakers: list[EntityReference] = Field(default_factory=list)
+    volunteers: list[EntityReference] = Field(default_factory=list)
+    equipment: list[EntityReference] = Field(default_factory=list)
+    tasks: list[EntityReference] = Field(default_factory=list)
+    risks: list[EntityReference] = Field(default_factory=list)
+
+
+class DependencyResult(BaseModel):
+    source: DependencySource
+    affected: AffectedEntities

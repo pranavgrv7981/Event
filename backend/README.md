@@ -48,9 +48,24 @@ The script clears existing rows in dependency-safe table order before inserting 
 - `GET /equipment` lists equipment.
 - `GET /tasks` lists tasks.
 - `GET /risks` lists manually recorded risks.
+- `GET /dependencies/{entity_type}/{entity_id}` returns deterministic related entities for `event`, `venue`, `session`, `speaker`, `volunteer`, `equipment`, `task`, or `risk` sources.
 
 ## Database
 
 SQLAlchemy is configured through `DATABASE_URL`, which defaults to `sqlite:///./event.db`. Application startup imports model metadata and creates missing tables. The schema includes events, venues, sessions, speakers, volunteers, equipment, tasks, risks, and changes, plus association tables connecting sessions with speakers, volunteers, and equipment. Sessions also reference their venue; tasks and risks can reference related sessions and venues.
 
 The seed currently creates one KBC TechFest 2026 event, 7 venues, 11 sessions, 7 speakers, 22 volunteers, 13 equipment records, 17 tasks, 5 risks, and 1 change record. The SQLite database and Python cache/virtual environment files are local development artifacts and are ignored by Git.
+
+## Dependency traversal
+
+The dependency endpoint follows explicit SQLAlchemy relationships and returns unique results sorted by ID. Venue and session lookups include their linked sessions, people, equipment, tasks, and recorded risks; other source types return only the directly related records supported by their relationships. It computes database facts only and does not perform impact analysis or AI explanations.
+
+## Tests
+
+Run the backend test suite from this directory:
+
+```powershell
+python -m pytest -q
+```
+
+The dependency tests seed an isolated temporary SQLite database from `seed.py`; they do not clear or reseed the working development database.
