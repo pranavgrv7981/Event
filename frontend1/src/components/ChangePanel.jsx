@@ -121,7 +121,10 @@ export function ChangePanel({
   const destinationVenue = venues.find((v) => v.id === newValue);
 
   return (
-    <div className={isModal ? 'cc-modal-window' : 'cc-card'}>
+    <div
+      className={isModal ? 'cc-modal-window' : 'cc-card'}
+      onClick={(e) => isModal && e.stopPropagation()}
+    >
       {isModal && (
         <div className="cc-modal-head">
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -152,10 +155,10 @@ export function ChangePanel({
           <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
             <button
               type="button"
-              className="cc-btn cc-btn-secondary cc-btn-sm"
-              onClick={() => applyPreset('session_01', 'venue_auditorium_b', 'Auditorium A sound stage technical check requires relocation to Auditorium B.')}
+              className="cc-btn cc-btn-primary cc-btn-sm"
+              onClick={() => applyPreset('session_01', 'venue_auditorium_b', 'Auditorium A sound stage technical maintenance requires relocating Keynote to Auditorium B.')}
             >
-              Demo: Move Opening Ceremony &rarr; Aud B
+              🎯 Primary Demo: Move Keynote (Aud A &rarr; Aud B)
             </button>
             <button
               type="button"
@@ -267,7 +270,17 @@ export function ChangePanel({
 
           {/* Operational Reason */}
           <div style={{ marginBottom: '14px' }}>
-            <label className="cc-form-label">4. Operational Reason (Required by Validation)</label>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+              <label className="cc-form-label" style={{ margin: 0 }}>4. Operational Reason (Required by Validation)</label>
+              <button
+                type="button"
+                className="cc-btn cc-btn-secondary cc-btn-sm"
+                onClick={() => setReason(`Operational relocation of ${currentSession?.title || 'Keynote'} to ${destinationVenue?.name || 'Auditorium B'} due to stage technical requirements.`)}
+                style={{ fontSize: '10px', padding: '2px 8px' }}
+              >
+                ✨ Quick Fill Reason
+              </button>
+            </div>
             <input
               type="text"
               className="cc-input"
@@ -351,6 +364,24 @@ export function ChangePanel({
               isLoading={isAnalyzing}
               onTriggerAnalyze={handleManualAnalyze}
             />
+
+            {/* P3 Notion Integration Architecture Boundary */}
+            <div style={{ backgroundColor: 'rgba(255, 255, 255, 0.02)', border: '1px dashed rgba(255, 255, 255, 0.15)', borderRadius: '6px', padding: '12px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <span style={{ fontSize: '18px' }}>📓</span>
+                <div>
+                  <div style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-main)', letterSpacing: '0.04em', textTransform: 'uppercase' }}>
+                    P3 Notion Integration Boundary
+                  </div>
+                  <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
+                    Payload packaged: Change record, deterministic affected resources ({Object.values(verifiedImpact.impact?.counts || {}).reduce((a, b) => a + b, 0)} items), {verifiedImpact.conflicts?.length || 0} conflicts, and AI action checklist ready for export.
+                  </div>
+                </div>
+              </div>
+              <span className="cc-badge neutral" style={{ fontSize: '10px' }}>
+                AWAITING P3 NOTION ADAPTER
+              </span>
+            </div>
           </div>
         )}
       </div>

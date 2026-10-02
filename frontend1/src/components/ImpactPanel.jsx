@@ -91,17 +91,20 @@ export function ImpactPanel({ verifiedImpact, onInspectEntity }) {
         ))}
       </div>
 
-      {/* Selected Entity Category Breakdown */}
-      {selectedCat && (
-        <div style={{ backgroundColor: 'rgba(9, 13, 22, 0.85)', border: '1px solid var(--border-mid)', borderRadius: '6px', padding: '12px', marginBottom: '12px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-            <span style={{ fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-main)' }}>
-              Affected {selectedCat} Records ({categories.find(c => c.key === selectedCat)?.items.length || 0})
-            </span>
-            <button className="cc-btn cc-btn-secondary cc-btn-sm" onClick={() => setSelectedCat(null)} style={{ padding: '1px 5px', fontSize: '9px' }}>
-              Close
+      {/* Affected Entities Breakdown */}
+      <div style={{ backgroundColor: 'rgba(9, 13, 22, 0.75)', border: '1px solid var(--border-dim)', borderRadius: '6px', padding: '12px 14px', marginBottom: '12px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+          <span style={{ fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', color: 'var(--accent-emerald)', letterSpacing: '0.04em' }}>
+            {selectedCat ? `AFFECTED ${selectedCat.toUpperCase()} (${categories.find(c => c.key === selectedCat)?.items.length || 0})` : 'AFFECTED RESOURCE INVENTORY'}
+          </span>
+          {selectedCat && (
+            <button className="cc-btn cc-btn-secondary cc-btn-sm" onClick={() => setSelectedCat(null)} style={{ padding: '1px 6px', fontSize: '10px' }}>
+              Show All Affected
             </button>
-          </div>
+          )}
+        </div>
+
+        {selectedCat ? (
           <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
             {categories.find(c => c.key === selectedCat)?.items.length > 0 ? (
               categories.find(c => c.key === selectedCat)?.items.map((item) => (
@@ -111,15 +114,41 @@ export function ImpactPanel({ verifiedImpact, onInspectEntity }) {
                   style={{ cursor: onInspectEntity ? 'pointer' : 'default' }}
                   onClick={() => onInspectEntity && onInspectEntity(item.id)}
                 >
-                  <strong>{item.name}</strong> <span style={{ opacity: 0.6 }}>({item.id})</span>
+                  <strong>{item.name}</strong> <span style={{ opacity: 0.6, fontSize: '10px' }}>({item.id})</span>
                 </span>
               ))
             ) : (
-              <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>No items affected.</span>
+              <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>No items affected in this category.</span>
             )}
           </div>
-        </div>
-      )}
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            {categories.filter(c => c.items && c.items.length > 0).length === 0 ? (
+              <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>No secondary resources affected.</span>
+            ) : (
+              categories.filter(c => c.items && c.items.length > 0).map(cat => (
+                <div key={cat.key} style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', fontSize: '11px' }}>
+                  <span style={{ minWidth: '95px', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', fontSize: '10px', paddingTop: '2px' }}>
+                    {cat.icon} {cat.label}:
+                  </span>
+                  <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap' }}>
+                    {cat.items.map(item => (
+                      <span
+                        key={item.id}
+                        className="cc-badge neutral"
+                        style={{ cursor: onInspectEntity ? 'pointer' : 'default' }}
+                        onClick={() => onInspectEntity && onInspectEntity(item.id)}
+                      >
+                        <strong>{item.name}</strong> <span style={{ opacity: 0.6, fontSize: '9px' }}>({item.id})</span>
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        )}
+      </div>
 
       {/* Engine Factor Tags */}
       {impact?.reasons && impact.reasons.length > 0 && (

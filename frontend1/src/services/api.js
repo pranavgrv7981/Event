@@ -112,6 +112,12 @@ export const api = {
   analyzeChange: (changeId) => request(`/changes/${changeId}/analyze`, {
     method: 'POST',
   }),
+
+  // P3 Notion Integration Architecture (Ready for P3 Backend Adapter)
+  // Contract prepared for dispatching verified impact + AI synthesis to Notion databases once P3 backend adapter is activated.
+  syncToNotion: (changeId) => request(`/changes/${changeId}/sync-notion`, {
+    method: 'POST',
+  }),
 };
 
 export default api;

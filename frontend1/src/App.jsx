@@ -316,6 +316,7 @@ export function App() {
       {changeModal.isOpen && (
         <div className="cc-modal-backdrop" onClick={() => setChangeModal({ isOpen: false, session: null })}>
           <ChangePanel
+            key={changeModal.session?.id || 'new-change'}
             eventId={event?.id}
             sessions={sessions}
             venues={venues}
