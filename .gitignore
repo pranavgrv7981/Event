@@ -3,3 +3,7 @@ __pycache__/
 .env
 .venv/
 backend/event.db
+*.db
+.pytest_cache/
+venv/
+ENV/

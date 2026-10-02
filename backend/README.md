@@ -1,6 +1,6 @@
 # Event Operations Command Center API
 
-This directory contains the FastAPI backend, SQLAlchemy models, SQLite database setup, deterministic development seed data, read APIs, deterministic dependency traversal, and transactional change processing. The database is the source of truth for operational records and explicit relationships. Impact results contain database-derived facts only; no AI layer is implemented.
+This directory contains the FastAPI backend, SQLAlchemy models, SQLite database setup, deterministic development seed data, read APIs, deterministic dependency traversal, transactional change processing, and an on-demand AI analysis layer. The database and dependency engine remain the source of truth for operational facts; AI only interprets verified impact and falls back deterministically when Gemini is unavailable.
 
 ## Setup
 
@@ -17,7 +17,7 @@ Install dependencies:
 python -m pip install -r requirements.txt
 ```
 
-Optionally copy `.env.example` to `.env` and set `DATABASE_URL` in your shell or development environment before starting the server. The default is `sqlite:///./event.db`, relative to the backend working directory.
+Optionally copy `.env.example` to `.env` and configure `DATABASE_URL`, `AI_PROVIDER`, and `GEMINI_API_KEY` before starting the server. `AI_PROVIDER` defaults to `fallback`; selecting Gemini without a key still uses fallback. The database default is `sqlite:///./event.db`, relative to the backend working directory.
 
 ## Run
 
@@ -52,6 +52,7 @@ The script clears existing rows in dependency-safe table order before inserting 
 - `POST /events/{event_id}/changes` validates, applies, records, and analyzes an operational field change.
 - `GET /events/{event_id}/changes` lists the event's change history.
 - `GET /changes/{change_id}` returns one recorded change.
+- `POST /changes/{change_id}/analyze` reconstructs verified impact from current database relationships and returns it separately from AI-generated analysis. The endpoint never stores AI output.
 
 ## Database
 
@@ -66,6 +67,10 @@ The dependency endpoint follows explicit SQLAlchemy relationships and returns un
 Change processing validates ownership and writable fields, captures the old value from the database, and atomically applies the update with a `Change` record. Dependency and conflict analysis run in the same transaction; errors roll back both the update and record. The returned severity is deterministic: high for venue schedule or speaker overlaps, medium for equipment or volunteer overlaps or multiple affected tasks, and low otherwise. Reasons are machine-readable codes.
 
 Conflict checks supported by the current schema are venue schedule overlap, speaker double-booking, volunteer double-booking, and concurrent equipment assignments beyond recorded quantity. The schema has no session attendance or required-capacity field, so capacity conflicts are not calculated. Changing a venue's display name does not relocate session foreign keys; to move a session, change its `venue_id`.
+
+## AI impact analysis
+
+Set `AI_PROVIDER=gemini` and provide `GEMINI_API_KEY` to enable Gemini analysis through Google's official `google-genai` SDK. Provider failures, missing credentials, malformed responses, and unsupported output fall back to deterministic local analysis. The API labels the verified backend impact separately from generated interpretation. No AI output is persisted.
 
 ## Tests
 

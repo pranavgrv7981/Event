@@ -202,3 +202,84 @@ class VerifiedImpactResponse(BaseModel):
     conflicts: list[ConflictItem]
     impact: ImpactSummary
     verification: ImpactVerification = Field(default_factory=ImpactVerification)
+
+
+class AIContractModel(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+
+class AIChange(AIContractModel):
+    entity_type: str = Field(min_length=1, max_length=32)
+    entity_id: str = Field(min_length=1, max_length=64)
+    field_name: str = Field(min_length=1, max_length=64)
+    old_value: str | None
+    new_value: str | None
+    reason: str = Field(max_length=2000)
+
+
+class AIFactReference(AIContractModel):
+    id: str
+    name: str
+
+
+class AIAffectedEntities(AIContractModel):
+    events: list[AIFactReference]
+    venues: list[AIFactReference]
+    sessions: list[AIFactReference]
+    speakers: list[AIFactReference]
+    volunteers: list[AIFactReference]
+    equipment: list[AIFactReference]
+    tasks: list[AIFactReference]
+    risks: list[AIFactReference]
+
+
+class AIConflict(AIContractModel):
+    type: Literal[
+        "venue_schedule_overlap",
+        "speaker_overlap",
+        "volunteer_overlap",
+        "equipment_conflict",
+    ]
+    severity: Literal["high", "medium"]
+    message: str
+    entity_ids: list[str]
+
+
+class AIImpactCounts(AIContractModel):
+    sessions: int = Field(ge=0)
+    speakers: int = Field(ge=0)
+    volunteers: int = Field(ge=0)
+    equipment: int = Field(ge=0)
+    tasks: int = Field(ge=0)
+    risks: int = Field(ge=0)
+
+
+class AIImpact(AIContractModel):
+    counts: AIImpactCounts
+    conflict_count: int = Field(ge=0)
+    severity: Literal["low", "medium", "high"]
+    reasons: list[str]
+
+
+class AIImpactInput(AIContractModel):
+    change: AIChange
+    affected: AIAffectedEntities
+    conflicts: list[AIConflict]
+    impact: AIImpact
+
+
+class AIImpactAnalysis(AIContractModel):
+    summary: str = Field(min_length=1, max_length=600)
+    priority: Literal["low", "medium", "high"]
+    key_impacts: list[str] = Field(max_length=10)
+    recommended_actions: list[str] = Field(max_length=10)
+    warnings: list[str] = Field(max_length=10)
+
+
+class AIImpactAnalysisResponse(AIContractModel):
+    change_id: str
+    source: Literal["verified_backend_impact"] = "verified_backend_impact"
+    analysis_type: Literal["ai_generated", "deterministic_fallback"]
+    provider: Literal["gemini", "fallback"]
+    verified_impact: VerifiedImpactResponse
+    analysis: AIImpactAnalysis

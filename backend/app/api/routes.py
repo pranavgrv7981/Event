@@ -16,6 +16,7 @@ from app.schemas import (
     DependencyResult,
     ChangeRead,
     ChangeRequest,
+    AIImpactAnalysisResponse,
     RiskRead,
     SessionRead,
     SpeakerRead,
@@ -37,7 +38,9 @@ from app.services.impact_service import (
     UnchangedValue,
     UnsupportedChangeField,
     process_change,
+    reconstruct_verified_impact,
 )
+from app.services.ai_impact_service import analyze_verified_impact
 from app.models import Change
 
 router = APIRouter()
@@ -99,6 +102,24 @@ def get_change(change_id: str, db: Session = Depends(get_db)) -> Change:
     if change is None:
         raise HTTPException(status_code=404, detail="Change not found")
     return change
+
+
+@router.post("/changes/{change_id}/analyze", response_model=AIImpactAnalysisResponse)
+def analyze_change(change_id: str, db: Session = Depends(get_db)) -> AIImpactAnalysisResponse:
+    change = db.get(Change, change_id)
+    if change is None:
+        raise HTTPException(status_code=404, detail="Change not found")
+    try:
+        verified = reconstruct_verified_impact(db, change)
+        return analyze_verified_impact(verified)
+    except EntityNotFound as exc:
+        raise HTTPException(status_code=404, detail="Change target entity not found") from exc
+    except SQLAlchemyError as exc:
+        logger.exception("Verified impact reconstruction failed for change %s", change_id)
+        raise HTTPException(status_code=500, detail="Impact analysis failed") from exc
+    except Exception as exc:
+        logger.exception("Impact analysis failed for change %s", change_id)
+        raise HTTPException(status_code=500, detail="Impact analysis failed") from exc
 
 
 @router.get("/dependencies/{entity_type}/{entity_id}", response_model=DependencyResult)

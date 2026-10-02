@@ -178,6 +178,33 @@ def analyze_impact(affected: AffectedEntities, conflicts: list[ConflictItem]) ->
     )
 
 
+def reconstruct_verified_impact(db: Session, change: Change) -> VerifiedImpactResponse:
+    """Recompute a read-only impact snapshot for a recorded change using current records."""
+    if change.entity_type not in ENTITY_MODELS:
+        raise UnsupportedEntityType(change.entity_type)
+    target = db.get(ENTITY_MODELS[change.entity_type], change.entity_id)
+    if target is None:
+        raise EntityNotFound(f"{change.entity_type}/{change.entity_id}")
+
+    dependency_result = get_affected_entities(db, change.entity_type, change.entity_id)
+    current_value = getattr(target, change.field_name, None)
+    conflicts = detect_conflicts(
+        db,
+        event_id=change.event_id,
+        entity_type=change.entity_type,
+        entity=target,
+        field_name=change.field_name,
+        new_value=current_value,
+    )
+    return VerifiedImpactResponse(
+        change_id=change.id,
+        change=ChangeRead.model_validate(change),
+        affected=dependency_result.affected,
+        conflicts=conflicts,
+        impact=analyze_impact(dependency_result.affected, conflicts),
+    )
+
+
 def process_change(
     db: Session,
     *,
