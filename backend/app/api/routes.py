@@ -3,8 +3,8 @@
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session, selectinload
 
 from app.database import get_db
@@ -14,11 +14,14 @@ from app.schemas import (
     EventDetail,
     EventRead,
     DependencyResult,
+    ChangeRead,
+    ChangeRequest,
     RiskRead,
     SessionRead,
     SpeakerRead,
     TaskRead,
     VenueRead,
+    VerifiedImpactResponse,
     VolunteerRead,
 )
 from app.services.dependency_engine import (
@@ -27,9 +30,75 @@ from app.services.dependency_engine import (
     UnsupportedEntityType,
     get_affected_entities,
 )
+from app.services.impact_service import (
+    EntityOwnershipError,
+    EventNotFound,
+    InvalidChangeValue,
+    UnchangedValue,
+    UnsupportedChangeField,
+    process_change,
+)
+from app.models import Change
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+
+@router.post(
+    "/events/{event_id}/changes",
+    response_model=VerifiedImpactResponse,
+    status_code=201,
+)
+def create_event_change(
+    event_id: str, request: ChangeRequest, db: Session = Depends(get_db)
+) -> VerifiedImpactResponse:
+    try:
+        return process_change(
+            db,
+            event_id=event_id,
+            entity_type=request.entity_type,
+            entity_id=request.entity_id,
+            field_name=request.field_name,
+            new_value=request.new_value,
+            reason=request.reason,
+        )
+    except EventNotFound as exc:
+        raise HTTPException(status_code=404, detail="Event not found") from exc
+    except EntityNotFound as exc:
+        raise HTTPException(status_code=404, detail="Target entity not found") from exc
+    except (
+        EntityOwnershipError,
+        InvalidChangeValue,
+        InvalidEntityIdentifier,
+        UnchangedValue,
+        UnsupportedChangeField,
+        UnsupportedEntityType,
+    ) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except SQLAlchemyError as exc:
+        logger.exception("Change processing failed for event %s", event_id)
+        raise HTTPException(status_code=500, detail="Change processing failed") from exc
+    except Exception as exc:
+        logger.exception("Unexpected change processing failure for event %s", event_id)
+        raise HTTPException(status_code=500, detail="Change processing failed") from exc
+
+
+@router.get("/events/{event_id}/changes", response_model=list[ChangeRead])
+def list_event_changes(event_id: str, db: Session = Depends(get_db)) -> list[Change]:
+    if db.get(Event, event_id) is None:
+        raise HTTPException(status_code=404, detail="Event not found")
+    statement = select(Change).where(Change.event_id == event_id).order_by(
+        Change.created_at.desc(), Change.id.desc()
+    )
+    return list(db.scalars(statement).all())
+
+
+@router.get("/changes/{change_id}", response_model=ChangeRead)
+def get_change(change_id: str, db: Session = Depends(get_db)) -> Change:
+    change = db.get(Change, change_id)
+    if change is None:
+        raise HTTPException(status_code=404, detail="Change not found")
+    return change
 
 
 @router.get("/dependencies/{entity_type}/{entity_id}", response_model=DependencyResult)

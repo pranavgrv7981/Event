@@ -1,9 +1,9 @@
 """Pydantic response schemas for the read API."""
 
 from datetime import date, datetime
-from typing import Literal
+from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class ORMModel(BaseModel):
@@ -130,3 +130,75 @@ class AffectedEntities(BaseModel):
 class DependencyResult(BaseModel):
     source: DependencySource
     affected: AffectedEntities
+
+
+class ChangeRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    entity_type: str = Field(min_length=1, max_length=32)
+    entity_id: str = Field(min_length=1, max_length=64)
+    field_name: str = Field(min_length=1, max_length=64)
+    new_value: Any
+    reason: str = Field(min_length=1, max_length=2000)
+
+    @field_validator("reason")
+    @classmethod
+    def reason_must_not_be_blank(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("Reason cannot be blank")
+        return value
+
+
+class ChangeRead(ORMModel):
+    id: str
+    event_id: str
+    entity_type: str
+    entity_id: str
+    field_name: str
+    old_value: str | None
+    new_value: str | None
+    reason: str
+    created_by: str | None
+    created_at: datetime
+
+
+class ConflictItem(BaseModel):
+    type: Literal[
+        "venue_schedule_overlap",
+        "speaker_overlap",
+        "volunteer_overlap",
+        "equipment_conflict",
+    ]
+    severity: Literal["high", "medium"]
+    message: str
+    entity_ids: list[str]
+
+
+class ImpactCounts(BaseModel):
+    sessions: int
+    speakers: int
+    volunteers: int
+    equipment: int
+    tasks: int
+    risks: int
+
+
+class ImpactSummary(BaseModel):
+    counts: ImpactCounts
+    conflict_count: int
+    severity: Literal["low", "medium", "high"]
+    reasons: list[str]
+
+
+class ImpactVerification(BaseModel):
+    source: Literal["database"] = "database"
+    deterministic: Literal[True] = True
+
+
+class VerifiedImpactResponse(BaseModel):
+    change_id: str
+    change: ChangeRead
+    affected: AffectedEntities
+    conflicts: list[ConflictItem]
+    impact: ImpactSummary
+    verification: ImpactVerification = Field(default_factory=ImpactVerification)

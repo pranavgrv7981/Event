@@ -1,6 +1,6 @@
 # Event Operations Command Center API
 
-This directory contains the FastAPI backend, SQLAlchemy models, SQLite database setup, deterministic development seed data, and basic read APIs for the Event Operations Command Center. The database is the source of truth for the operational records and their explicit relationships. No dependency or impact engine is implemented in this phase.
+This directory contains the FastAPI backend, SQLAlchemy models, SQLite database setup, deterministic development seed data, read APIs, deterministic dependency traversal, and transactional change processing. The database is the source of truth for operational records and explicit relationships. Impact results contain database-derived facts only; no AI layer is implemented.
 
 ## Setup
 
@@ -49,6 +49,9 @@ The script clears existing rows in dependency-safe table order before inserting 
 - `GET /tasks` lists tasks.
 - `GET /risks` lists manually recorded risks.
 - `GET /dependencies/{entity_type}/{entity_id}` returns deterministic related entities for `event`, `venue`, `session`, `speaker`, `volunteer`, `equipment`, `task`, or `risk` sources.
+- `POST /events/{event_id}/changes` validates, applies, records, and analyzes an operational field change.
+- `GET /events/{event_id}/changes` lists the event's change history.
+- `GET /changes/{change_id}` returns one recorded change.
 
 ## Database
 
@@ -58,7 +61,11 @@ The seed currently creates one KBC TechFest 2026 event, 7 venues, 11 sessions, 7
 
 ## Dependency traversal
 
-The dependency endpoint follows explicit SQLAlchemy relationships and returns unique results sorted by ID. Venue and session lookups include their linked sessions, people, equipment, tasks, and recorded risks; other source types return only the directly related records supported by their relationships. It computes database facts only and does not perform impact analysis or AI explanations.
+The dependency endpoint follows explicit SQLAlchemy relationships and returns unique results sorted by ID. Venue and session lookups include their linked sessions, people, equipment, tasks, and recorded risks; other source types return only the directly related records supported by their relationships.
+
+Change processing validates ownership and writable fields, captures the old value from the database, and atomically applies the update with a `Change` record. Dependency and conflict analysis run in the same transaction; errors roll back both the update and record. The returned severity is deterministic: high for venue schedule or speaker overlaps, medium for equipment or volunteer overlaps or multiple affected tasks, and low otherwise. Reasons are machine-readable codes.
+
+Conflict checks supported by the current schema are venue schedule overlap, speaker double-booking, volunteer double-booking, and concurrent equipment assignments beyond recorded quantity. The schema has no session attendance or required-capacity field, so capacity conflicts are not calculated. Changing a venue's display name does not relocate session foreign keys; to move a session, change its `venue_id`.
 
 ## Tests
 
@@ -68,4 +75,4 @@ Run the backend test suite from this directory:
 python -m pytest -q
 ```
 
-The dependency tests seed an isolated temporary SQLite database from `seed.py`; they do not clear or reseed the working development database.
+The tests seed isolated temporary SQLite databases from `seed.py`; they do not clear or reseed the working development database. The Auditorium A change test derives expected affected records from the seeded ORM relationships.
