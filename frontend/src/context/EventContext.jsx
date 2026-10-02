@@ -53,6 +53,19 @@ export function EventProvider({ children }) {
     setIsLive((prev) => !prev);
   };
 
+  const [isVenueChangeModalOpen, setIsVenueChangeModalOpen] = useState(false);
+  const [venueChangeInitialData, setVenueChangeInitialData] = useState(null);
+  const [latestImpactAnalysis, setLatestImpactAnalysis] = useState(null);
+
+  const openVenueChangeModal = (data = null) => {
+    setVenueChangeInitialData(data);
+    setIsVenueChangeModalOpen(true);
+  };
+
+  const closeVenueChangeModal = () => {
+    setIsVenueChangeModalOpen(false);
+  };
+
   return (
     <EventContext.Provider
       value={{
@@ -68,6 +81,12 @@ export function EventProvider({ children }) {
         isLoading,
         error,
         refreshData,
+        isVenueChangeModalOpen,
+        venueChangeInitialData,
+        openVenueChangeModal,
+        closeVenueChangeModal,
+        latestImpactAnalysis,
+        setLatestImpactAnalysis,
       }}
     >
       {children}

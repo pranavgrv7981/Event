@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useContext } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   ArrowRight,
@@ -9,10 +9,13 @@ import {
   Clock,
   ExternalLink,
   ShieldAlert,
+  Zap,
 } from "lucide-react";
+import { EventContext } from "../../context/EventContext";
 
 export default function ChangeAlert({ change }) {
   const navigate = useNavigate();
+  const { openVenueChangeModal } = useContext(EventContext);
 
   if (!change) return null;
 
@@ -107,14 +110,30 @@ export default function ChangeAlert({ change }) {
           Authorized by <span className="font-mono text-slate-300">{change.authorizedBy}</span>
         </div>
 
-        <button
-          className="btn btn-primary impact-action-btn"
-          onClick={() => navigate("/impact")}
-          title="Open Impact Assessment"
-        >
-          <span>VIEW IMPACT</span>
-          <ExternalLink className="w-4 h-4 ml-1.5" />
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            className="btn btn-warning text-xs font-semibold flex items-center gap-1.5"
+            onClick={() =>
+              openVenueChangeModal({
+                currentVenue: change.fromVenue || "Auditorium A",
+                session: "AI Workshop",
+              })
+            }
+            title="Launch Change Venue Workflow"
+          >
+            <Zap className="w-3.5 h-3.5" />
+            <span>CHANGE VENUE</span>
+          </button>
+
+          <button
+            className="btn btn-primary impact-action-btn"
+            onClick={() => navigate("/impact")}
+            title="Open Impact Assessment"
+          >
+            <span>VIEW IMPACT</span>
+            <ExternalLink className="w-4 h-4 ml-1.5" />
+          </button>
+        </div>
       </div>
     </div>
   );

@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from "react";
-import { Building2, Search, AlertTriangle } from "lucide-react";
+import React, { useState, useEffect, useContext } from "react";
+import { Building2, Search, AlertTriangle, Zap } from "lucide-react";
 import { getVenues } from "../services/api";
 import PageHeader from "../components/common/PageHeader";
 import StatusBadge from "../components/common/StatusBadge";
@@ -7,8 +7,10 @@ import { LoadingState, ErrorState, EmptyState } from "../components/common/State
 import VenueCard from "../components/venues/VenueCard";
 import EntityDetailDrawer from "../components/common/EntityDetailDrawer";
 import { useEntityDrawer } from "../hooks/useEntityDrawer";
+import { EventContext } from "../context/EventContext";
 
 export default function VenuesPage() {
+  const { openVenueChangeModal } = useContext(EventContext);
   const [venues, setVenues] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -74,14 +76,28 @@ export default function VenuesPage() {
           />
         }
         actions={
-          maintenanceCount > 0 && (
-            <div className="warning-pill-banner">
-              <AlertTriangle className="w-3.5 h-3.5 text-danger mr-1" />
-              <span className="font-mono text-2xs text-danger font-bold">
-                {maintenanceCount} FACILITY UNDER MAINTENANCE (HALL A)
-              </span>
-            </div>
-          )
+          <div className="flex items-center gap-2 flex-wrap">
+            {maintenanceCount > 0 && (
+              <div className="warning-pill-banner">
+                <AlertTriangle className="w-3.5 h-3.5 text-danger mr-1" />
+                <span className="font-mono text-2xs text-danger font-bold">
+                  {maintenanceCount} FACILITY UNDER MAINTENANCE (HALL A)
+                </span>
+              </div>
+            )}
+            <button
+              className="btn btn-warning text-xs flex items-center gap-1.5 font-semibold"
+              onClick={() =>
+                openVenueChangeModal({
+                  currentVenue: "Auditorium A",
+                  session: "AI Workshop",
+                })
+              }
+            >
+              <Zap className="w-3.5 h-3.5" />
+              <span>Change Venue Workflow</span>
+            </button>
+          </div>
         }
       />
 
@@ -116,6 +132,7 @@ export default function VenuesPage() {
               key={venue.id}
               venue={venue}
               onClick={(v) => openEntity("venue", v)}
+              onRelocate={(v) => openVenueChangeModal({ currentVenue: v.name })}
             />
           ))}
         </div>
@@ -128,6 +145,7 @@ export default function VenuesPage() {
         entityType={entityType}
         entityData={entityData}
         onSelectEntity={openEntity}
+        onOpenVenueChange={openVenueChangeModal}
       />
     </div>
   );

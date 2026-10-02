@@ -1,8 +1,8 @@
 import React from "react";
-import { Building2, Users, Calendar, AlertTriangle, Wrench } from "lucide-react";
+import { Building2, Users, Calendar, AlertTriangle, Wrench, Zap } from "lucide-react";
 import StatusBadge from "../common/StatusBadge";
 
-export default function VenueCard({ venue, onClick }) {
+export default function VenueCard({ venue, onClick, onRelocate }) {
   const isMaintenance = venue.status === "MAINTENANCE";
 
   return (
@@ -20,7 +20,22 @@ export default function VenueCard({ venue, onClick }) {
           <h3 className="card-entity-title">{venue.name}</h3>
           {venue.code && <span className="entity-code-chip">{venue.code}</span>}
         </div>
-        <StatusBadge status={venue.status} />
+        <div className="flex items-center gap-2">
+          {onRelocate && (
+            <button
+              className="btn btn-warning text-3xs py-1 px-2 flex items-center gap-1 font-semibold"
+              onClick={(e) => {
+                e.stopPropagation();
+                onRelocate(venue);
+              }}
+              title="Change venue / relocate sessions"
+            >
+              <Zap className="w-2.5 h-2.5" />
+              <span>Relocate</span>
+            </button>
+          )}
+          <StatusBadge status={venue.status} />
+        </div>
       </div>
 
       {/* Building & Floor */}

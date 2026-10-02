@@ -1,10 +1,18 @@
-import React, { useState } from "react";
+import React, { useState, useContext } from "react";
 import { Outlet } from "react-router-dom";
 import TopBar from "./TopBar";
 import Sidebar from "./Sidebar";
+import VenueChangeModal from "../workflow/VenueChangeModal";
+import { EventContext } from "../../context/EventContext";
 
 export default function AppLayout() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const {
+    isVenueChangeModalOpen,
+    closeVenueChangeModal,
+    venueChangeInitialData,
+    setLatestImpactAnalysis,
+  } = useContext(EventContext);
 
   return (
     <div className="app-shell-root">
@@ -28,6 +36,14 @@ export default function AppLayout() {
           </div>
         </main>
       </div>
+
+      {/* Global Venue Change Workflow Modal */}
+      <VenueChangeModal
+        isOpen={isVenueChangeModalOpen}
+        onClose={closeVenueChangeModal}
+        initialData={venueChangeInitialData}
+        onAnalysisSuccess={(result) => setLatestImpactAnalysis(result)}
+      />
     </div>
   );
 }

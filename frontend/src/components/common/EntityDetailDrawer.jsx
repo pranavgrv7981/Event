@@ -1,4 +1,4 @@
-import React, { useEffect } from "react";
+import React, { useEffect, useContext } from "react";
 import {
   X,
   Calendar,
@@ -11,9 +11,11 @@ import {
   Info,
   Phone,
   Mail,
+  Zap,
 } from "lucide-react";
 import StatusBadge from "./StatusBadge";
 import { getPriorityStyle } from "../../utils/formatters";
+import { EventContext } from "../../context/EventContext";
 
 export default function EntityDetailDrawer({
   isOpen,
@@ -21,7 +23,17 @@ export default function EntityDetailDrawer({
   entityType,
   entityData,
   onSelectEntity,
+  onOpenVenueChange,
 }) {
+  const eventCtx = useContext(EventContext);
+
+  const handleTriggerVenueChange = (data) => {
+    if (onOpenVenueChange) {
+      onOpenVenueChange(data);
+    } else if (eventCtx?.openVenueChangeModal) {
+      eventCtx.openVenueChangeModal(data);
+    }
+  };
   // Handle escape key
   useEffect(() => {
     function handleKeyDown(e) {
@@ -131,6 +143,34 @@ export default function EntityDetailDrawer({
                   <span className="cell-val font-mono text-xs text-slate-200">
                     {entityData.attendeeEstimate || "150+"} attendees
                   </span>
+                </div>
+              </div>
+
+              {/* Change Venue Action Trigger */}
+              <div className="drawer-action-banner">
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <div>
+                    <span className="font-semibold text-xs text-slate-100 flex items-center gap-1.5">
+                      <Zap className="w-3.5 h-3.5 text-warning" />
+                      Operational Venue Relocation
+                    </span>
+                    <span className="text-2xs text-slate-400">
+                      Currently assigned to <strong className="text-slate-200">{entityData.venue}</strong>
+                    </span>
+                  </div>
+                  <button
+                    className="btn btn-warning text-xs flex items-center gap-1.5 font-semibold"
+                    onClick={() =>
+                      handleTriggerVenueChange({
+                        session: entityData.title,
+                        sessionId: entityData.id,
+                        currentVenue: entityData.venue || "Auditorium A",
+                      })
+                    }
+                  >
+                    <Zap className="w-3.5 h-3.5" />
+                    <span>Change Venue</span>
+                  </button>
                 </div>
               </div>
 
@@ -288,6 +328,32 @@ export default function EntityDetailDrawer({
                   <span className="cell-val font-mono text-xs text-slate-100 font-bold">
                     {entityData.scheduledCount || entityData.scheduledSessions?.length || 0} Sessions
                   </span>
+                </div>
+              </div>
+
+              {/* Relocate Venue Action Trigger */}
+              <div className="drawer-action-banner">
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <div>
+                    <span className="font-semibold text-xs text-slate-100 flex items-center gap-1.5">
+                      <Zap className="w-3.5 h-3.5 text-warning" />
+                      Facility Evacuation & Relocation
+                    </span>
+                    <span className="text-2xs text-slate-400">
+                      Relocate scheduled sessions from <strong className="text-slate-200">{entityData.name}</strong>
+                    </span>
+                  </div>
+                  <button
+                    className="btn btn-warning text-xs flex items-center gap-1.5 font-semibold"
+                    onClick={() =>
+                      handleTriggerVenueChange({
+                        currentVenue: entityData.name,
+                      })
+                    }
+                  >
+                    <Zap className="w-3.5 h-3.5" />
+                    <span>Relocate Venue</span>
+                  </button>
                 </div>
               </div>
 

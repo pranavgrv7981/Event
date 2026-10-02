@@ -1,129 +1,183 @@
-import React from "react";
-import { Link } from "react-router-dom";
+import React, { useState, useEffect, useContext } from "react";
 import {
   GitBranch,
+  Zap,
+  Building2,
   ArrowRight,
-  ShieldAlert,
-  Calendar,
-  Users,
-  HeartHandshake,
-  Clock,
+  RotateCcw,
 } from "lucide-react";
-import PlaceholderPage from "../components/common/PlaceholderPage";
-import { MOCK_CHANGES } from "../mock/eventData";
+import { analyzeVenueChange } from "../services/api";
+import PageHeader from "../components/common/PageHeader";
+import StatusBadge from "../components/common/StatusBadge";
+import { LoadingState } from "../components/common/StateViews";
+import ImpactResultsView from "../components/workflow/ImpactResultsView";
+import EntityDetailDrawer from "../components/common/EntityDetailDrawer";
+import { useEntityDrawer } from "../hooks/useEntityDrawer";
+import { EventContext } from "../context/EventContext";
 
 export default function ImpactPage() {
-  const primaryChange = MOCK_CHANGES[0];
+  const {
+    openVenueChangeModal,
+    latestImpactAnalysis,
+    setLatestImpactAnalysis,
+  } = useContext(EventContext);
+
+  const [loading, setLoading] = useState(!latestImpactAnalysis);
+  const [impactData, setImpactData] = useState(latestImpactAnalysis);
+
+  const {
+    isOpen,
+    entityType,
+    entityData,
+    openEntity,
+    closeDrawer,
+  } = useEntityDrawer();
+
+  // Load verified default impact analysis on mount if none exists
+  useEffect(() => {
+    let ignore = false;
+    async function loadInitialImpact() {
+      if (latestImpactAnalysis) {
+        setImpactData(latestImpactAnalysis);
+        setLoading(false);
+        return;
+      }
+      try {
+        setLoading(true);
+        const data = await analyzeVenueChange("event_kbc_hackathon_2026", {
+          old_value: "Auditorium A",
+          new_value: "Auditorium B",
+          session_title: "AI Workshop",
+          reason: "HVAC cooling compressor failure detected; emergency thermal shutdown.",
+        });
+        if (!ignore) {
+          setImpactData(data);
+          setLatestImpactAnalysis(data);
+        }
+      } catch (err) {
+        console.error("Failed to load initial impact data:", err);
+      } finally {
+        if (!ignore) {
+          setLoading(false);
+        }
+      }
+    }
+    loadInitialImpact();
+    return () => {
+      ignore = true;
+    };
+  }, [latestImpactAnalysis, setLatestImpactAnalysis]);
+
+  const handleRerun = async () => {
+    try {
+      setLoading(true);
+      const data = await analyzeVenueChange("event_kbc_hackathon_2026", {
+        old_value: impactData?.change?.old_value || "Auditorium A",
+        new_value: impactData?.change?.new_value || "Auditorium B",
+        session_title: "AI Workshop",
+        reason: impactData?.change?.reason || "HVAC cooling compressor failure detected; emergency thermal shutdown.",
+      });
+      setImpactData(data);
+      setLatestImpactAnalysis(data);
+    } catch (err) {
+      console.error("Failed to re-run impact analysis:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
-    <PlaceholderPage
-      title="Operational Impact Assessment"
-      code="MOD-IMPACT"
-      subtitle="Entity relationship cascade and affected downstream assets from field changes."
-      icon={GitBranch}
-      phaseTarget="Phase 2 — Dependency Tree & Verified Impact Engine"
-      statSummary={[
-        { count: "4", label: "Affected Sessions" },
-        { count: "3", label: "Affected Speakers" },
-        { count: "8", label: "Affected Volunteers" },
-        { count: "5", label: "Affected Devices" },
-      ]}
-    >
-      <div className="impact-view-container">
-        {/* Source Change Alert Banner */}
-        <div className="impact-source-banner">
-          <div className="flex items-center justify-between flex-wrap gap-2">
-            <div className="flex items-center gap-2">
-              <ShieldAlert className="w-5 h-5 text-danger" />
-              <span className="font-mono font-semibold text-danger text-sm">
-                TRIGGER: VENUE CHANGE DETECTED
-              </span>
-              <span className="text-slate-400 font-mono text-xs">
-                (ID: {primaryChange.id})
-              </span>
-            </div>
-            <span className="text-slate-400 text-xs font-mono">
-              <Clock className="w-3.5 h-3.5 inline mr-1" />
-              {primaryChange.timestamp}
-            </span>
+    <div className="impact-page-wrapper">
+      <PageHeader
+        title="Operational Impact Assessment"
+        code="OPS-IMPACT"
+        subtitle="Downstream entity cascade verification from field alterations, facility relocations, and schedule shifts."
+        badge={
+          <StatusBadge
+            status="CASCADE ENGINE VERIFIED"
+            variant="warning"
+            pulse={true}
+          />
+        }
+        actions={
+          <div className="flex items-center gap-2 flex-wrap">
+            <button
+              className="btn btn-secondary text-xs flex items-center gap-1.5"
+              onClick={handleRerun}
+              disabled={loading}
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              <span>Re-run Verification</span>
+            </button>
+            <button
+              className="btn btn-primary text-xs flex items-center gap-1.5 font-semibold"
+              onClick={() =>
+                openVenueChangeModal({
+                  currentVenue: impactData?.change?.old_value || "Auditorium A",
+                  session: "AI Workshop",
+                })
+              }
+            >
+              <Zap className="w-3.5 h-3.5 text-warning" />
+              <span>Launch Venue Change Workflow</span>
+            </button>
           </div>
+        }
+      />
 
-          <div className="source-relocation-display">
-            <span className="source-from">{primaryChange.fromVenue}</span>
-            <ArrowRight className="w-4 h-4 text-danger mx-2 inline" />
-            <span className="source-to">{primaryChange.toVenue}</span>
-          </div>
-          <p className="text-xs text-slate-300 mt-2 font-mono">
-            {primaryChange.reason}
-          </p>
+      {/* Simulator Quick Action Header */}
+      <div className="impact-quick-simulator-bar">
+        <div className="flex items-center gap-2">
+          <GitBranch className="w-4 h-4 text-primary" />
+          <span className="font-mono text-xs font-bold text-slate-200 uppercase">
+            ACTIVE SIMULATION SCENARIO:
+          </span>
         </div>
-
-        {/* Note on Architecture */}
-        <div className="impact-ownership-note">
-          <span className="font-semibold text-primary">ARCHITECTURE NOTE:</span> Deterministic dependency calculation is maintained by P1 backend service (`GET /dependencies/{'{entity_type}'}/{'{entity_id}'}`). The frontend displays verified affected sets with zero client-side calculation overhead.
-        </div>
-
-        {/* Affected Entities Breakdown Columns */}
-        <div className="impact-cascade-grid">
-          {/* Affected Sessions */}
-          <div className="cascade-panel">
-            <div className="cascade-panel-header">
-              <Calendar className="w-4 h-4 text-primary" />
-              <h4 className="cascade-panel-title">4 Affected Sessions</h4>
-            </div>
-            <div className="cascade-panel-body">
-              {primaryChange.affectedSessions.map((s) => (
-                <div key={s.id} className="cascade-item">
-                  <div className="flex justify-between items-start">
-                    <span className="font-medium text-slate-100 text-xs">{s.title}</span>
-                    <span className="font-mono text-2xs text-primary">{s.time}</span>
-                  </div>
-                  <span className="text-2xs text-slate-400">Speaker: {s.speaker}</span>
-                </div>
-              ))}
-            </div>
+        <div className="flex items-center gap-2 flex-wrap">
+          <div className="scenario-chip old">
+            <Building2 className="w-3 h-3 text-danger inline mr-1" />
+            <span>{impactData?.change?.old_value || "Auditorium A"}</span>
           </div>
-
-          {/* Affected Speakers */}
-          <div className="cascade-panel">
-            <div className="cascade-panel-header">
-              <Users className="w-4 h-4 text-warning" />
-              <h4 className="cascade-panel-title">3 Affected Speakers</h4>
-            </div>
-            <div className="cascade-panel-body">
-              {primaryChange.affectedSpeakers.map((spk, idx) => (
-                <div key={idx} className="cascade-item">
-                  <span className="font-medium text-slate-100 text-xs">{spk}</span>
-                  <span className="text-2xs text-slate-400 block">Relocation alert SMS queued</span>
-                </div>
-              ))}
-            </div>
+          <ArrowRight className="w-3.5 h-3.5 text-warning" />
+          <div className="scenario-chip new">
+            <Building2 className="w-3 h-3 text-emerald-400 inline mr-1" />
+            <span>{impactData?.change?.new_value || "Auditorium B"}</span>
           </div>
-
-          {/* Affected Volunteers */}
-          <div className="cascade-panel">
-            <div className="cascade-panel-header">
-              <HeartHandshake className="w-4 h-4 text-emerald-400" />
-              <h4 className="cascade-panel-title">8 Affected Volunteers</h4>
-            </div>
-            <div className="cascade-panel-body">
-              {primaryChange.affectedVolunteers.map((vol, idx) => (
-                <div key={idx} className="cascade-item">
-                  <span className="font-medium text-slate-100 text-xs">{vol}</span>
-                  <span className="text-2xs text-emerald-400 block font-mono">Duty reassigned to Hall B</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        {/* Direct Action Backlink */}
-        <div className="mt-4 pt-3 border-t border-slate-700/50 flex justify-end">
-          <Link to="/" className="btn btn-secondary text-xs">
-            Return to Command Center
-          </Link>
+          <button
+            className="btn btn-secondary text-3xs py-1 px-2.5 ml-2 font-mono"
+            onClick={() =>
+              openVenueChangeModal({
+                currentVenue: impactData?.change?.old_value || "Auditorium A",
+                session: "AI Workshop",
+              })
+            }
+          >
+            Adjust Parameters ⚙
+          </button>
         </div>
       </div>
-    </PlaceholderPage>
+
+      {/* Main Results View */}
+      {loading ? (
+        <LoadingState message="Traversing P1 dependency DAG and aggregating downstream entity cascade..." />
+      ) : (
+        <ImpactResultsView
+          impactData={impactData}
+          onInspectEntity={(type, entity) => openEntity(type, entity)}
+          onRerun={handleRerun}
+          isModal={false}
+        />
+      )}
+
+      {/* Reusable Entity Detail Drawer for interactive entity inspection */}
+      <EntityDetailDrawer
+        isOpen={isOpen}
+        onClose={closeDrawer}
+        entityType={entityType}
+        entityData={entityData}
+        onSelectEntity={openEntity}
+        onOpenVenueChange={openVenueChangeModal}
+      />
+    </div>
   );
 }

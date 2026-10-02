@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useContext } from "react";
 import { Calendar, Clock, LayoutGrid, ListFilter, Search } from "lucide-react";
 import { getSessions } from "../services/api";
 import PageHeader from "../components/common/PageHeader";
@@ -8,8 +8,10 @@ import SessionCard from "../components/sessions/SessionCard";
 import Timeline from "../components/timeline/Timeline";
 import EntityDetailDrawer from "../components/common/EntityDetailDrawer";
 import { useEntityDrawer } from "../hooks/useEntityDrawer";
+import { EventContext } from "../context/EventContext";
 
 export default function SessionsPage() {
+  const { openVenueChangeModal } = useContext(EventContext);
   const [sessions, setSessions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -162,6 +164,7 @@ export default function SessionsPage() {
         entityType={entityType}
         entityData={entityData}
         onSelectEntity={openEntity}
+        onOpenVenueChange={openVenueChangeModal}
       />
     </div>
   );
