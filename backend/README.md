@@ -76,6 +76,35 @@ Conflict checks supported by the current schema are venue schedule overlap, spea
 
 Set `AI_PROVIDER=gemini` and provide `GEMINI_API_KEY` to enable Gemini analysis through Google's official `google-genai` SDK. Provider failures, missing credentials, malformed responses, and unsupported output fall back to deterministic local analysis. The API labels the verified backend impact separately from generated interpretation. No AI output is persisted.
 
+## Notion operational sync
+
+Notion is an optional one-way operational view. The backend database remains authoritative; dependency traversal, conflict detection, impact severity, and record selection are calculated by the backend. Notion edits are never read back into the backend.
+
+Create a Notion integration, enable read-content and insert/update-content capabilities, and share each of the four source databases with it. Set these variables in the backend environment (the `.env.example` file lists them):
+
+The application reads the process environment; it does not load a `.env` file itself. Export the values in the shell or configure them through the process manager that starts Uvicorn.
+
+- `NOTION_API_KEY`
+- `NOTION_SESSIONS_DATABASE_ID`
+- `NOTION_TASKS_DATABASE_ID`
+- `NOTION_RISKS_DATABASE_ID`
+- `NOTION_CHANGES_DATABASE_ID`
+
+Each configured database must have exactly one data source. The integration resolves the data source from the configured database ID using Notion API version `2025-09-03`. Create these properties with the exact names and types; every database needs the named title property and the listed additional columns:
+
+| Database | Title property | Additional properties |
+|---|---|---|
+| Sessions | `Name` (title) | `Session ID` (rich text), `Venue` (rich text), `Start Time` (date), `End Time` (date), `Speaker` (rich text), `Status` (select) |
+| Tasks | `Title` (title) | `Task ID` (rich text), `Status` (select), `Priority` (select), `Owner` (rich text), `Due Time` (date), `Source Change` (rich text) |
+| Risks | `Title` (title) | `Risk ID` (rich text), `Severity` (select), `Status` (select), `Description` (rich text), `Source Change` (rich text) |
+| Changes | `Title` (title) | `Change ID` (rich text), `Entity` (rich text), `Field` (rich text), `Old Value` (rich text), `New Value` (rich text), `Status` (select), `Severity` (select), `Created Time` (date), `AI Recommended Actions` (rich text) |
+
+Select properties should include backend values: task status `open`, `todo`, `in_progress`, `blocked`, `done`, `cancelled`; task priority and risk severity `low`, `medium`, `high`, `critical`; risk status `open`, `monitoring`, `mitigating`, `mitigated`, `closed`; session status values used by your event data; and change status `Recorded`. Change severity is the deterministic backend impact severity. Changes do not have a persisted status/severity field; `Recorded` denotes the existing change record, and severity is mapped from verified impact. AI recommended actions are stored as text on the change page.
+
+Call `POST /changes/{change_id}/sync-notion` to reconstruct verified impact from the current backend database, obtain the configured AI analysis or deterministic fallback, and upsert the change plus its related sessions, tasks, and risks. Upsert identity is the corresponding backend ID property (`Session ID`, `Task ID`, `Risk ID`, `Change ID`); repeat calls update the matching page rather than creating duplicates. The result reports per-kind synced counts, whether the change/actions were synced, the analysis provider, and per-record failures. Failed Notion records do not stop attempts for other records. This is backend-to-Notion only; no webhook or Notion-to-backend path is implemented.
+
+Without Notion configured, the API and other backend features still start normally. The sync endpoint returns a structured unsuccessful result listing missing environment-variable names; it does not require a Notion token for backend startup or tests. Tests use a fake SDK client and make no Notion network calls.
+
 ## Operational follow-ups
 
 Successful changes generate one deterministic follow-up per nonzero verified impact category, plus a session follow-up when the changed source is a session excluded from its own affected set. Generated tasks and conflict risks store a nullable direct `source_change_id`; an equivalent unresolved task for the same event and linked session (or venue when there is no session) is reused, and completed/cancelled tasks do not block a new follow-up. Risks are created only for confirmed venue, speaker, volunteer, or equipment conflicts, with severity assigned by a fixed backend mapping. Active risks are reused by event, conflict type, and related session or venue. Existing SQLite databases receive an additive migration for the nullable change links. Task/risk status values are lowercase to remain compatible with seeded records; `mitigating` remains accepted as a legacy risk status.

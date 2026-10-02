@@ -8,6 +8,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session, selectinload
 
 from app.database import get_db
+from app.integrations.notion.sync import NotionSyncResult, sync_change_to_notion
 from app.models import Equipment, Event, Risk, Session as EventSession, Speaker, Task, Venue, Volunteer
 from app.schemas import (
     EquipmentRead,
@@ -172,6 +173,25 @@ def analyze_change(change_id: str, db: Session = Depends(get_db)) -> AIImpactAna
     except Exception as exc:
         logger.exception("Impact analysis failed for change %s", change_id)
         raise HTTPException(status_code=500, detail="Impact analysis failed") from exc
+
+
+@router.post("/changes/{change_id}/sync-notion", response_model=NotionSyncResult)
+def sync_change_to_notion_api(
+    change_id: str, db: Session = Depends(get_db)
+) -> NotionSyncResult:
+    change = db.get(Change, change_id)
+    if change is None:
+        raise HTTPException(status_code=404, detail="Change not found")
+    try:
+        verified = reconstruct_verified_impact(db, change)
+    except EntityNotFound as exc:
+        raise HTTPException(status_code=404, detail="Change target entity not found") from exc
+    except UnsupportedEntityType as exc:
+        raise HTTPException(status_code=422, detail="Unsupported change target entity") from exc
+    except SQLAlchemyError as exc:
+        logger.exception("Verified impact reconstruction failed for Notion sync %s", change_id)
+        raise HTTPException(status_code=500, detail="Notion sync preparation failed") from exc
+    return sync_change_to_notion(db, change, verified)
 
 
 @router.get("/dependencies/{entity_type}/{entity_id}", response_model=DependencyResult)
