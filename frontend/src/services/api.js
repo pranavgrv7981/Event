@@ -2,18 +2,8 @@
  * Mira Event Command Center - API & Data Service Abstraction
  * 
  * Central data layer providing consistent async access to event operations data.
- * In Phase 1, this returns internally consistent mock data.
- * In later phases, these functions easily swap to P1's FastAPI endpoints:
- *   - GET /events/{event_id}
- *   - GET /events/{event_id}/dashboard
- *   - GET /sessions
- *   - GET /venues
- *   - GET /speakers
- *   - GET /volunteers
- *   - GET /equipment
- *   - GET /events/{event_id}/tasks
- *   - GET /events/{event_id}/risks
- *   - GET /events/{event_id}/changes
+ * In Phase 1 & 2, this returns internally consistent mock data.
+ * In later phases, these functions easily swap to P1's FastAPI endpoints.
  */
 
 import {
@@ -21,6 +11,7 @@ import {
   MOCK_VENUES,
   MOCK_SPEAKERS,
   MOCK_VOLUNTEERS,
+  MOCK_EQUIPMENT,
   MOCK_SESSIONS,
   MOCK_CHANGES,
   MOCK_TASKS,
@@ -29,7 +20,7 @@ import {
 } from "../mock/eventData";
 
 // Simulated network latency helper
-const simulateDelay = (ms = 60) => new Promise((resolve) => setTimeout(resolve, ms));
+const simulateDelay = (ms = 40) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
  * Fetch available events or a specific event by ID
@@ -81,11 +72,62 @@ export async function getSessions(_eventId = "event_kbc_hackathon_2026") {
 }
 
 /**
- * Fetch all venues
+ * Fetch a single session by ID
+ */
+export async function getSessionById(sessionId) {
+  await simulateDelay();
+  const session = MOCK_SESSIONS.find((s) => s.id === sessionId);
+  if (!session) {
+    throw new Error(`Session with ID '${sessionId}' not found.`);
+  }
+  return { ...session };
+}
+
+/**
+ * Fetch chronological event timeline
+ */
+export async function getTimeline(_eventId = "event_kbc_hackathon_2026") {
+  await simulateDelay();
+  // Sort chronologically by startTime
+  const sorted = [...MOCK_SESSIONS].sort((a, b) => a.startTime.localeCompare(b.startTime));
+  return sorted;
+}
+
+/**
+ * Fetch all venues with their linked sessions
  */
 export async function getVenues(_eventId = "event_kbc_hackathon_2026") {
   await simulateDelay();
-  return [...MOCK_VENUES];
+  return MOCK_VENUES.map((venue) => {
+    // Find sessions assigned to this venue
+    const sessions = MOCK_SESSIONS.filter(
+      (s) => s.venueId === venue.id || (s.isRelocated && s.originalVenue === venue.name)
+    );
+    return {
+      ...venue,
+      scheduledSessions: sessions,
+      scheduledCount: sessions.length,
+    };
+  });
+}
+
+/**
+ * Fetch a single venue by ID
+ */
+export async function getVenueById(venueId) {
+  await simulateDelay();
+  const venue = MOCK_VENUES.find((v) => v.id === venueId);
+  if (!venue) {
+    throw new Error(`Venue with ID '${venueId}' not found.`);
+  }
+  const sessions = MOCK_SESSIONS.filter(
+    (s) => s.venueId === venue.id || (s.isRelocated && s.originalVenue === venue.name)
+  );
+  return {
+    ...venue,
+    scheduledSessions: sessions,
+    scheduledCount: sessions.length,
+  };
 }
 
 /**
@@ -97,6 +139,18 @@ export async function getSpeakers(_eventId = "event_kbc_hackathon_2026") {
 }
 
 /**
+ * Fetch a single speaker by ID
+ */
+export async function getSpeakerById(speakerId) {
+  await simulateDelay();
+  const speaker = MOCK_SPEAKERS.find((sp) => sp.id === speakerId);
+  if (!speaker) {
+    throw new Error(`Speaker with ID '${speakerId}' not found.`);
+  }
+  return { ...speaker };
+}
+
+/**
  * Fetch all volunteers
  */
 export async function getVolunteers(_eventId = "event_kbc_hackathon_2026") {
@@ -105,21 +159,35 @@ export async function getVolunteers(_eventId = "event_kbc_hackathon_2026") {
 }
 
 /**
+ * Fetch a single volunteer by ID
+ */
+export async function getVolunteerById(volunteerId) {
+  await simulateDelay();
+  const volunteer = MOCK_VOLUNTEERS.find((vol) => vol.id === volunteerId);
+  if (!volunteer) {
+    throw new Error(`Volunteer with ID '${volunteerId}' not found.`);
+  }
+  return { ...volunteer };
+}
+
+/**
  * Fetch equipment inventory
  */
 export async function getEquipment(_eventId = "event_kbc_hackathon_2026") {
   await simulateDelay();
-  // Return equipment array derived from venues and mock inventory
-  return [
-    { id: "eq_01", name: "Laser Projector A", type: "Projection", quantity: 1, venue: "Hall A", status: "Under Check" },
-    { id: "eq_02", name: "Laser Projector B", type: "Projection", quantity: 1, venue: "Hall B", status: "Operational" },
-    { id: "eq_03", name: "Wireless Mic Kit B (4x)", type: "Audio", quantity: 4, venue: "Hall B", status: "Operational" },
-    { id: "eq_04", name: "Dual Stage Monitors", type: "Audio", quantity: 2, venue: "Hall B", status: "Operational" },
-    { id: "eq_05", name: "GPU Workstation Cluster (16x)", type: "Computing", quantity: 16, venue: "Innovation Lab", status: "Operational" },
-    { id: "eq_06", name: "High-Lumen Projector C", type: "Projection", quantity: 2, venue: "Main Hall", status: "Operational" },
-    { id: "eq_07", name: "Heavy Duty Extension Board Set", type: "Power", quantity: 20, venue: "Main Hall / Lab", status: "In Use" },
-    { id: "eq_08", name: "Automated External Defibrillator", type: "Safety", quantity: 1, venue: "Central Corridor", status: "Inspected" },
-  ];
+  return [...MOCK_EQUIPMENT];
+}
+
+/**
+ * Fetch a single equipment item by ID
+ */
+export async function getEquipmentById(equipmentId) {
+  await simulateDelay();
+  const item = MOCK_EQUIPMENT.find((eq) => eq.id === equipmentId);
+  if (!item) {
+    throw new Error(`Equipment with ID '${equipmentId}' not found.`);
+  }
+  return { ...item };
 }
 
 /**
