@@ -1,7 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import api from '../services/api';
 
-export function Header({ activeEvent, activeConflictsCount = 0, onOpenChangeModal }) {
+export function Header({
+  activeEvent,
+  activeConflictsCount = 0,
+  onOpenChangeModal,
+  currentRole = 'operations',
+  onSelectRole,
+}) {
   const [isBackendOnline, setIsBackendOnline] = useState(null);
 
   useEffect(() => {
@@ -44,6 +50,44 @@ export function Header({ activeEvent, activeConflictsCount = 0, onOpenChangeModa
           </div>
         )}
       </div>
+
+      {/* Role Switcher */}
+      {onSelectRole && (
+        <div className="cc-role-selector">
+          <button
+            type="button"
+            className={`cc-role-btn ${currentRole === 'operations' ? 'active' : ''}`}
+            onClick={() => onSelectRole('operations')}
+            title="General operations, schedule, and all conflicts"
+          >
+            🎛️ Operations
+          </button>
+          <button
+            type="button"
+            className={`cc-role-btn ${currentRole === 'technical' ? 'active' : ''}`}
+            onClick={() => onSelectRole('technical')}
+            title="Technical equipment, AV dependencies, and hardware collisions"
+          >
+            🛠️ Technical
+          </button>
+          <button
+            type="button"
+            className={`cc-role-btn ${currentRole === 'volunteers' ? 'active' : ''}`}
+            onClick={() => onSelectRole('volunteers')}
+            title="Volunteer deployment, staffing overlaps, and shifts"
+          >
+            🤝 Volunteers
+          </button>
+          <button
+            type="button"
+            className={`cc-role-btn ${currentRole === 'leadership' ? 'active' : ''}`}
+            onClick={() => onSelectRole('leadership')}
+            title="Executive briefing, critical risks, and governance audit"
+          >
+            👑 Leadership
+          </button>
+        </div>
+      )}
 
       <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
         {activeConflictsCount > 0 ? (

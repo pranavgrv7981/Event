@@ -16,6 +16,21 @@ export function ChangesPage({
   const [verifiedImpact, setVerifiedImpact] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [syncingChangeId, setSyncingChangeId] = useState(null);
+  const [syncResults, setSyncResults] = useState({});
+  const [syncErrors, setSyncErrors] = useState({});
+
+  const handleSyncToNotion = async (changeId) => {
+    setSyncingChangeId(changeId);
+    try {
+      const res = await api.syncToNotion(changeId);
+      setSyncResults((prev) => ({ ...prev, [changeId]: res }));
+    } catch (err) {
+      setSyncErrors((prev) => ({ ...prev, [changeId]: err?.detail || err?.message || 'Sync failed' }));
+    } finally {
+      setSyncingChangeId(null);
+    }
+  };
 
   const handleSelectChange = async (changeId) => {
     if (selectedChangeId === changeId) {
@@ -218,6 +233,46 @@ export function ChangesPage({
                                   isLoading={isAnalyzing}
                                   onTriggerAnalyze={() => handleAnalyze(ch.id)}
                                 />
+
+                                {/* Notion Sync block for this past change */}
+                                <div style={{ backgroundColor: 'rgba(15, 23, 42, 0.7)', border: '1px solid var(--border-dim)', borderRadius: '6px', padding: '12px 14px' }}>
+                                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', fontWeight: 700 }}>
+                                      <span>📓</span>
+                                      <span>Notion Operational Sync (P3)</span>
+                                    </div>
+                                    <button
+                                      type="button"
+                                      className="cc-btn cc-btn-secondary cc-btn-sm"
+                                      onClick={() => handleSyncToNotion(ch.id)}
+                                      disabled={syncingChangeId === ch.id}
+                                      style={{ fontSize: '11px', padding: '3px 10px' }}
+                                    >
+                                      {syncingChangeId === ch.id ? 'Syncing...' : (syncResults[ch.id] ? '↻ Re-sync Notion' : '📓 Sync to Notion')}
+                                    </button>
+                                  </div>
+
+                                  {syncResults[ch.id]?.success && (
+                                    <div style={{ backgroundColor: 'rgba(16, 185, 129, 0.1)', border: '1px solid rgba(16, 185, 129, 0.3)', borderRadius: '4px', padding: '8px 10px', fontSize: '11px', color: 'var(--accent-emerald)' }}>
+                                      ✓ Synced: {syncResults[ch.id].sessions_synced} sessions, {syncResults[ch.id].tasks_synced} tasks, {syncResults[ch.id].risks_synced} risks, {syncResults[ch.id].ai_recommended_actions_synced} AI actions.
+                                    </div>
+                                  )}
+
+                                  {syncResults[ch.id] && !syncResults[ch.id].success && (
+                                    <div style={{ backgroundColor: 'rgba(244, 63, 94, 0.08)', border: '1px solid rgba(244, 63, 94, 0.3)', borderRadius: '4px', padding: '8px 10px', fontSize: '11px', color: '#fecdd3' }}>
+                                      <strong>Backend Sync Response:</strong>
+                                      {syncResults[ch.id].failures?.map((f, i) => (
+                                        <div key={i} style={{ marginTop: '2px' }}>&bull; [{f.record_type}] {f.error}</div>
+                                      ))}
+                                    </div>
+                                  )}
+
+                                  {syncErrors[ch.id] && (
+                                    <div style={{ backgroundColor: 'rgba(244, 63, 94, 0.08)', border: '1px solid rgba(244, 63, 94, 0.3)', borderRadius: '4px', padding: '8px 10px', fontSize: '11px', color: '#fecdd3' }}>
+                                      <strong>Sync Error:</strong> {syncErrors[ch.id]}
+                                    </div>
+                                  )}
+                                </div>
                               </div>
                             )}
                           </td>

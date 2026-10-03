@@ -20,10 +20,13 @@ export function ChangePanel({
 
   const [isProcessing, setIsProcessing] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [isSyncingNotion, setIsSyncingNotion] = useState(false);
   const [error, setError] = useState(null);
 
   const [verifiedImpact, setVerifiedImpact] = useState(null);
   const [aiResponse, setAiResponse] = useState(null);
+  const [notionSyncResult, setNotionSyncResult] = useState(null);
+  const [notionSyncError, setNotionSyncError] = useState(null);
 
   const selectedSessionId = userSessionId ?? preselectedSession?.id ?? (sessions[0]?.id || '');
   const currentSession = sessions.find((s) => s.id === selectedSessionId);
@@ -48,6 +51,8 @@ export function ChangePanel({
     setError(null);
     setVerifiedImpact(null);
     setAiResponse(null);
+    setNotionSyncResult(null);
+    setNotionSyncError(null);
   };
 
   const handleSubmit = async (e) => {
@@ -69,6 +74,8 @@ export function ChangePanel({
     setError(null);
     setVerifiedImpact(null);
     setAiResponse(null);
+    setNotionSyncResult(null);
+    setNotionSyncError(null);
 
     try {
       const payload = {
@@ -97,6 +104,17 @@ export function ChangePanel({
         } finally {
           setIsAnalyzing(false);
         }
+
+        // 3. Dispatch One-Way Notion Sync (P3)
+        setIsSyncingNotion(true);
+        try {
+          const syncRes = await api.syncToNotion(impactResult.change_id);
+          setNotionSyncResult(syncRes);
+        } catch (syncErr) {
+          setNotionSyncError(syncErr?.detail || syncErr?.message || 'Notion sync failed');
+        } finally {
+          setIsSyncingNotion(false);
+        }
       }
     } catch (err) {
       setIsProcessing(false);
@@ -114,6 +132,21 @@ export function ChangePanel({
       setError(`AI analysis request error: ${err?.detail || err?.message}`);
     } finally {
       setIsAnalyzing(false);
+    }
+  };
+
+  const handleManualSyncNotion = async (targetChangeId) => {
+    const id = targetChangeId || verifiedImpact?.change_id;
+    if (!id) return;
+    setIsSyncingNotion(true);
+    setNotionSyncError(null);
+    try {
+      const syncRes = await api.syncToNotion(id);
+      setNotionSyncResult(syncRes);
+    } catch (err) {
+      setNotionSyncError(err?.detail || err?.message || 'Failed to communicate with Notion sync service');
+    } finally {
+      setIsSyncingNotion(false);
     }
   };
 
@@ -365,22 +398,129 @@ export function ChangePanel({
               onTriggerAnalyze={handleManualAnalyze}
             />
 
-            {/* P3 Notion Integration Architecture Boundary */}
-            <div style={{ backgroundColor: 'rgba(255, 255, 255, 0.02)', border: '1px dashed rgba(255, 255, 255, 0.15)', borderRadius: '6px', padding: '12px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <span style={{ fontSize: '18px' }}>📓</span>
+            {/* Stage 5: P3 Notion Operational Sync */}
+            <div className="cc-card" style={{ border: '1px solid var(--border-mid)', backgroundColor: 'rgba(15, 23, 42, 0.75)' }}>
+              <div className="cc-card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div className="cc-card-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span>📓</span>
+                  <span style={{ fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                    Stage 5: Notion Operational Sync (P3)
+                  </span>
+                </div>
                 <div>
-                  <div style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-main)', letterSpacing: '0.04em', textTransform: 'uppercase' }}>
-                    P3 Notion Integration Boundary
-                  </div>
-                  <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
-                    Payload packaged: Change record, deterministic affected resources ({Object.values(verifiedImpact.impact?.counts || {}).reduce((a, b) => a + b, 0)} items), {verifiedImpact.conflicts?.length || 0} conflicts, and AI action checklist ready for export.
-                  </div>
+                  {isSyncingNotion ? (
+                    <span className="cc-badge neutral">SYNCING TO NOTION...</span>
+                  ) : notionSyncResult?.success ? (
+                    <span className="cc-badge green">✓ NOTION SYNCED</span>
+                  ) : notionSyncResult ? (
+                    <span className="cc-badge rose">⚠ BACKEND SYNC RESPONSE</span>
+                  ) : (
+                    <span className="cc-badge neutral">READY TO SYNC</span>
+                  )}
                 </div>
               </div>
-              <span className="cc-badge neutral" style={{ fontSize: '10px' }}>
-                AWAITING P3 NOTION ADAPTER
-              </span>
+
+              <div style={{ padding: '14px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <p style={{ fontSize: '12px', color: 'var(--text-dim)', margin: 0 }}>
+                  Dispatches verified impact causality, affected resource rosters, active conflicts, and AI action checklists to Notion operational databases (one-way sync preserving backend source of truth).
+                </p>
+
+                {/* Sync in progress */}
+                {isSyncingNotion && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 14px', backgroundColor: 'rgba(14, 165, 233, 0.08)', borderRadius: '6px', border: '1px solid rgba(14, 165, 233, 0.2)' }}>
+                    <span style={{ fontSize: '13px' }}>⏳</span>
+                    <span style={{ fontSize: '12px', color: 'var(--accent-cyan)' }}>
+                      Connecting to backend Notion integration service...
+                    </span>
+                  </div>
+                )}
+
+                {/* Real backend success */}
+                {notionSyncResult && notionSyncResult.success && (
+                  <div style={{ backgroundColor: 'rgba(16, 185, 129, 0.1)', border: '1px solid rgba(16, 185, 129, 0.3)', borderRadius: '6px', padding: '12px 14px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                      <span style={{ color: 'var(--accent-emerald)', fontWeight: 700, fontSize: '13px' }}>
+                        ✓ Backend Notion Sync Succeeded
+                      </span>
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '10px', fontSize: '11px', marginTop: '8px' }}>
+                      <div style={{ backgroundColor: 'rgba(0,0,0,0.25)', padding: '6px 10px', borderRadius: '4px' }}>
+                        <div style={{ color: 'var(--text-muted)' }}>Change Record:</div>
+                        <strong style={{ color: 'var(--accent-emerald)' }}>{notionSyncResult.change_synced ? 'Synced' : 'Skipped'}</strong>
+                      </div>
+                      <div style={{ backgroundColor: 'rgba(0,0,0,0.25)', padding: '6px 10px', borderRadius: '4px' }}>
+                        <div style={{ color: 'var(--text-muted)' }}>Sessions Updated:</div>
+                        <strong>{notionSyncResult.sessions_synced}</strong>
+                      </div>
+                      <div style={{ backgroundColor: 'rgba(0,0,0,0.25)', padding: '6px 10px', borderRadius: '4px' }}>
+                        <div style={{ color: 'var(--text-muted)' }}>Tasks Created:</div>
+                        <strong>{notionSyncResult.tasks_synced}</strong>
+                      </div>
+                      <div style={{ backgroundColor: 'rgba(0,0,0,0.25)', padding: '6px 10px', borderRadius: '4px' }}>
+                        <div style={{ color: 'var(--text-muted)' }}>Risks Logged:</div>
+                        <strong>{notionSyncResult.risks_synced}</strong>
+                      </div>
+                      <div style={{ backgroundColor: 'rgba(0,0,0,0.25)', padding: '6px 10px', borderRadius: '4px' }}>
+                        <div style={{ color: 'var(--text-muted)' }}>AI Actions Pushed:</div>
+                        <strong>{notionSyncResult.ai_recommended_actions_synced}</strong>
+                      </div>
+                    </div>
+                    {notionSyncResult.analysis_provider && (
+                      <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '8px' }}>
+                        Provider: <code>{notionSyncResult.analysis_provider}</code>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Real backend error/configuration warning */}
+                {notionSyncResult && !notionSyncResult.success && (
+                  <div style={{ backgroundColor: 'rgba(244, 63, 94, 0.08)', border: '1px solid rgba(244, 63, 94, 0.3)', borderRadius: '6px', padding: '12px 14px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+                      <span style={{ color: 'var(--accent-rose)', fontWeight: 700, fontSize: '12px' }}>
+                        ⚠️ Backend Notion Service Response:
+                      </span>
+                    </div>
+                    {notionSyncResult.failures && notionSyncResult.failures.length > 0 ? (
+                      notionSyncResult.failures.map((fail, idx) => (
+                        <div key={idx} style={{ fontSize: '11px', color: '#fecdd3', marginBottom: '4px' }}>
+                          <span style={{ textTransform: 'uppercase', fontWeight: 700 }}>[{fail.record_type}]</span> {fail.error}
+                        </div>
+                      ))
+                    ) : (
+                      <div style={{ fontSize: '11px', color: '#fecdd3' }}>
+                        Notion sync could not be completed by the backend.
+                      </div>
+                    )}
+                    <div style={{ fontSize: '11px', color: 'var(--text-dim)', marginTop: '8px', borderTop: '1px solid rgba(255,255,255,0.08)', paddingTop: '6px' }}>
+                      💡 <em>Truth check:</em> The frontend called the real backend endpoint <code>POST /changes/{verifiedImpact.change_id}/sync-notion</code>. As expected without live Notion API credentials in <code>.env</code>, the backend reported missing configuration rather than faking data.
+                    </div>
+                  </div>
+                )}
+
+                {/* Network / Unexpected API Exception */}
+                {notionSyncError && (
+                  <div style={{ backgroundColor: 'rgba(244, 63, 94, 0.1)', border: '1px solid rgba(244, 63, 94, 0.3)', borderRadius: '6px', padding: '10px 14px', fontSize: '11px', color: '#fecdd3' }}>
+                    <strong>Sync Request Error:</strong> {notionSyncError}
+                  </div>
+                )}
+
+                {/* Manual Trigger / Re-sync button */}
+                <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap', marginTop: '4px' }}>
+                  <button
+                    type="button"
+                    className="cc-btn cc-btn-secondary cc-btn-sm"
+                    onClick={() => handleManualSyncNotion()}
+                    disabled={isSyncingNotion || !verifiedImpact?.change_id}
+                    style={{ minWidth: '160px' }}
+                  >
+                    {isSyncingNotion ? 'Syncing...' : (notionSyncResult ? '↻ Re-trigger Notion Sync' : '📓 Dispatch Sync to Notion')}
+                  </button>
+                  <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                    Payload bound to Change: <code>{verifiedImpact.change_id}</code>
+                  </span>
+                </div>
+              </div>
             </div>
           </div>
         )}

@@ -33,6 +33,7 @@ export function App() {
   const [error, setError] = useState(null);
   const [toast, setToast] = useState(null);
 
+  const [currentRole, setCurrentRole] = useState('operations');
   const [changeModal, setChangeModal] = useState({ isOpen: false, session: null });
   const [depModal, setDepModal] = useState({ isOpen: false, type: null, id: null });
   const [refreshTrigger, setRefreshTrigger] = useState(0);
@@ -193,6 +194,8 @@ export function App() {
           activeEvent={event}
           activeConflictsCount={activeConflicts.length}
           onOpenChangeModal={(s) => setChangeModal({ isOpen: true, session: s || null })}
+          currentRole={currentRole}
+          onSelectRole={setCurrentRole}
         />
 
         {/* Global Toast */}
@@ -220,6 +223,11 @@ export function App() {
               tasks={tasks}
               risks={risks}
               recentChanges={changes}
+              volunteers={volunteers}
+              equipment={equipment}
+              speakers={speakers}
+              currentRole={currentRole}
+              onSelectRole={setCurrentRole}
               onInitiateChange={(s) => setChangeModal({ isOpen: true, session: s || null })}
               onInspectDependencies={(type, id) => setDepModal({ isOpen: true, type, id })}
               onNavigateTab={setCurrentTab}
