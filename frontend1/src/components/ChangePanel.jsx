@@ -152,10 +152,16 @@ export function ChangePanel({
 
   const currentVenue = venues.find((v) => v.id === currentSession?.venue_id);
   const destinationVenue = venues.find((v) => v.id === newValue);
+  const currentValue = fieldName === 'venue_id'
+    ? currentVenue?.name || currentSession?.venue_id
+    : currentSession?.[fieldName] ?? '';
+  const proposedValue = fieldName === 'venue_id'
+    ? destinationVenue?.name || newValue
+    : newValue;
 
   return (
     <div
-      className={isModal ? 'cc-modal-window' : 'cc-card'}
+      className={`cc-change-panel ${isModal ? 'cc-modal-window' : 'cc-card cc-change-panel-embedded'}`}
       onClick={(e) => isModal && e.stopPropagation()}
     >
       {isModal && (
@@ -179,13 +185,14 @@ export function ChangePanel({
         </div>
       )}
 
-      <div style={{ padding: isModal ? '20px' : '0' }}>
+      <div className="cc-change-panel-body" style={{ padding: isModal ? '20px' : '0' }}>
         {/* Quick Scenario Buttons */}
-        <div style={{ backgroundColor: 'rgba(14, 165, 233, 0.08)', border: '1px solid rgba(14, 165, 233, 0.2)', borderRadius: '6px', padding: '10px 12px', marginBottom: '16px' }}>
-          <div style={{ fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', color: 'var(--accent-cyan)', marginBottom: '6px' }}>
-            🎯 Quick Demo Scenarios (One-Click Setup)
+        <div className="cc-demo-presets">
+          <div className="cc-demo-presets-title">
+            <span>Scenario presets</span>
+            <small>Populate the form with real event records</small>
           </div>
-          <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+          <div className="cc-demo-presets-actions">
             <button
               type="button"
               className="cc-btn cc-btn-primary cc-btn-sm"
@@ -211,8 +218,8 @@ export function ChangePanel({
         </div>
 
         {/* Change Form */}
-        <form onSubmit={handleSubmit}>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '14px', marginBottom: '14px' }}>
+        <form className="cc-change-form" onSubmit={handleSubmit}>
+          <div className="cc-change-fields">
             {/* Step 1: Session */}
             <div>
               <label className="cc-form-label">1. Target Session</label>
@@ -302,7 +309,7 @@ export function ChangePanel({
           </div>
 
           {/* Operational Reason */}
-          <div style={{ marginBottom: '14px' }}>
+          <div className="cc-reason-field">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
               <label className="cc-form-label" style={{ margin: 0 }}>4. Operational Reason (Required by Validation)</label>
               <button
@@ -326,24 +333,24 @@ export function ChangePanel({
 
           {/* Proposed Delta Preview */}
           {currentSession && newValue && (
-            <div style={{ backgroundColor: 'rgba(9, 13, 22, 0.6)', border: '1px dashed var(--border-mid)', borderRadius: '6px', padding: '10px 14px', marginBottom: '16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <div>
-                <span style={{ fontSize: '10px', textTransform: 'uppercase', color: 'var(--text-muted)', fontWeight: 700 }}>
-                  PROPOSED SHIFT:
-                </span>
-                <span style={{ marginLeft: '6px', fontSize: '12px', fontWeight: 600 }}>
-                  {currentSession.title}
-                </span>
-                <span style={{ margin: '0 6px', color: 'var(--text-muted)' }}>&bull;</span>
-                <span style={{ color: 'var(--accent-rose)', fontSize: '12px' }}>
-                  {currentVenue?.name || currentSession.venue_id}
-                </span>
-                <span style={{ margin: '0 4px', color: 'var(--text-muted)' }}>&rarr;</span>
-                <span style={{ color: 'var(--accent-emerald)', fontSize: '12px', fontWeight: 700 }}>
-                  {destinationVenue?.name || newValue}
-                </span>
+            <div className="cc-change-preview" aria-live="polite">
+              <div className="cc-change-preview-session">
+                <span>Change preview</span>
+                <strong>{currentSession.title}</strong>
+                <small>{currentSession.id}</small>
               </div>
-              <span className="cc-badge cyan">READY</span>
+              <div className="cc-change-preview-values">
+                <div className="cc-preview-value old">
+                  <span>Current</span>
+                  <strong>{currentValue}</strong>
+                </div>
+                <span className="cc-preview-arrow" aria-hidden="true">→</span>
+                <div className="cc-preview-value proposed">
+                  <span>Proposed</span>
+                  <strong>{proposedValue}</strong>
+                </div>
+              </div>
+              <span className="cc-badge cyan">READY TO REVIEW</span>
             </div>
           )}
 
@@ -353,7 +360,7 @@ export function ChangePanel({
             </div>
           )}
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <div className="cc-change-actions">
             <button
               type="submit"
               className="cc-btn cc-btn-primary"
@@ -372,8 +379,8 @@ export function ChangePanel({
 
         {/* Live Change Results */}
         {verifiedImpact && (
-          <div style={{ marginTop: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderTop: '1px solid var(--border-dim)', paddingTop: '16px' }}>
+          <div className="cc-change-results">
+            <div className="cc-change-result-heading">
               <div>
                 <div style={{ fontSize: '13px', fontWeight: 800, textTransform: 'uppercase' }}>
                   TRANSACTION COMMITTED
@@ -385,11 +392,10 @@ export function ChangePanel({
               <span className="cc-badge green">DATABASE APPLIED</span>
             </div>
 
-            {/* Conflicts */}
-            <ConflictPanel conflicts={verifiedImpact.conflicts} />
-
-            {/* Deterministic Verified Impact */}
-            <ImpactPanel verifiedImpact={verifiedImpact} />
+            <div className="cc-change-impact-grid">
+              <ImpactPanel verifiedImpact={verifiedImpact} />
+              <ConflictPanel conflicts={verifiedImpact.conflicts} />
+            </div>
 
             {/* AI Analysis */}
             <AiAnalysisPanel
@@ -399,7 +405,7 @@ export function ChangePanel({
             />
 
             {/* Stage 5: P3 Notion Operational Sync */}
-            <div className="cc-card" style={{ border: '1px solid var(--border-mid)', backgroundColor: 'rgba(15, 23, 42, 0.75)' }}>
+            <div className="cc-card cc-notion-sync-panel">
               <div className="cc-card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <div className="cc-card-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <span>📓</span>

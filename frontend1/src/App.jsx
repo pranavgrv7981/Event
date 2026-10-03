@@ -239,6 +239,7 @@ export function App() {
 
           {currentTab === 'demo' && (
             <ChangeStudioPage
+              event={event}
               eventId={event?.id}
               sessions={sessions}
               venues={venues}

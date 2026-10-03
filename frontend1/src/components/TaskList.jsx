@@ -38,7 +38,7 @@ export function TaskList({ tasks = [], onUpdateTaskStatus, isUpdating = false })
   };
 
   return (
-    <div className="cc-card">
+    <div className="cc-card cc-task-list">
       <div className="cc-card-header" style={{ flexWrap: 'wrap', gap: '8px' }}>
         <div className="cc-card-title">
           <span>✅</span>
@@ -80,6 +80,7 @@ export function TaskList({ tasks = [], onUpdateTaskStatus, isUpdating = false })
         ) : (
           filteredTasks.map((task) => (
             <div
+              className="cc-task-item"
               key={task.id}
               style={{
                 backgroundColor: 'rgba(9, 13, 22, 0.65)',
@@ -91,7 +92,7 @@ export function TaskList({ tasks = [], onUpdateTaskStatus, isUpdating = false })
                 gap: '6px',
               }}
             >
-              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '10px' }}>
+              <div className="cc-task-item-heading" style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '10px' }}>
                 <div>
                   <div style={{ fontWeight: 600, fontSize: '12px', color: 'var(--text-main)' }}>
                     {task.title}
