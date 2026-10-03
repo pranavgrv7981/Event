@@ -1,6 +1,6 @@
-# Event Operations Command Center - Backup Frontend (frontend1)
+# Event Operations Command Center - Official Frontend (frontend1)
 
-This directory contains an independent **backup implementation** of the **P2 Frontend** for the Event Operations Command Center. It is completely isolated inside `frontend1/` and runs independently against the FastAPI backend.
+This directory contains the **official P2 frontend** for the Event Operations Command Center. It runs against the FastAPI backend, which remains the source of truth for event data, dependency calculations, conflicts, and impact analysis.
 
 ---
 
@@ -110,7 +110,7 @@ npm run lint
 ## Primary Demo Story
 
 ```text
-1. Open Command Center Dashboard (or Change Studio)
+1. Open the Command Center Dashboard (or Change Studio)
        ↓
 2. Select Session: "Opening Ceremony" (Auditorium A)
        ↓
@@ -128,7 +128,8 @@ npm run lint
    ├── Change Committed (Auditorium A → Auditorium B)
    ├── ⚠ CONFLICTS DETECTED (Overlap with existing sessions in Auditorium B)
    ├── VERIFIED IMPACT (Deterministic counts: 3 Sessions, 2 Speakers, 7 Volunteers, 4 Equipment, 6 Tasks, 1 Risk)
-   └── AI IMPACT ANALYSIS (Gemini / Fallback summary, priority, key impacts, recommended actions, warnings)
+   ├── AI IMPACT ANALYSIS (Gemini / Fallback summary, priority, key impacts, recommended actions, warnings)
+   └── NOTION SYNC (one-way backend dispatch; reports missing configuration when credentials or database IDs are absent)
 ```
 
 ---
@@ -157,3 +158,4 @@ npm run lint
 - `GET /changes/{change_id}/tasks`
 - `GET /changes/{change_id}/risks`
 - `POST /changes/{change_id}/analyze`
+- `POST /changes/{change_id}/sync-notion`

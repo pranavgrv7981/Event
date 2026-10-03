@@ -62,9 +62,9 @@ export function Sidebar({ currentTab, onSelectTab, counts = {} }) {
 
       <div className="cc-sidebar-footer">
         <div style={{ fontWeight: 700, marginBottom: '2px', color: 'var(--text-dim)' }}>
-          BACKUP FRONTEND (P2)
+          OFFICIAL FRONTEND (P2)
         </div>
-        <div>Isolated in <code>frontend1/</code></div>
+        <div>React interface: <code>frontend1/</code></div>
         <div style={{ opacity: 0.7, marginTop: '2px' }}>FastAPI + SQLite Engine</div>
       </div>
     </aside>

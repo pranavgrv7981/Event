@@ -1,5 +1,5 @@
 /**
- * Centralized API Service for Event Operations Command Center (Backup Implementation)
+ * Centralized API service for the official Event Operations Command Center frontend.
  * Communicates exclusively with the FastAPI backend.
  * Base URL defaults to http://localhost:8000 (configurable via VITE_API_BASE_URL).
  */
