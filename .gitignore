@@ -3,6 +3,7 @@ __pycache__/
 .env
 .venv/
 backend/event.db
+backend/.notion-databases.json
 *.db
 .pytest_cache/
 venv/

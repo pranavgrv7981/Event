@@ -47,16 +47,24 @@ class FakeNotionAPI:
         self.page_records: dict[str, list[dict]] = {}
         self.next_id = 0
         self.fail_queries = False
+        self.fail_query_source_id: str | None = None
+        self.query_exception: Exception | None = None
+        self.fail_create_source_id: str | None = None
         self.databases = self
         self.data_sources = self
         self.pages = self
 
-    def retrieve(self, *, database_id: str) -> dict:
-        return {"data_sources": [{"id": f"source-{database_id}"}]}
+    def retrieve(
+        self, *, database_id: str | None = None, data_source_id: str | None = None
+    ) -> dict:
+        if database_id is not None:
+            return {"data_sources": [{"id": f"source-{database_id}"}]}
+        assert data_source_id is not None
+        return {"properties": {}}
 
     def query(self, *, data_source_id: str, filter: dict, **_kwargs: object) -> dict:
-        if self.fail_queries:
-            raise RuntimeError("private token detail must not leak")
+        if self.fail_queries or data_source_id == self.fail_query_source_id:
+            raise self.query_exception or RuntimeError("private token detail must not leak")
         prop_name = filter["property"]
         expected = filter["rich_text"]["equals"]
         found = []
@@ -67,6 +75,8 @@ class FakeNotionAPI:
         return {"results": found, "has_more": False, "next_cursor": None}
 
     def create(self, *, parent: dict, properties: dict) -> dict:
+        if parent["data_source_id"] == self.fail_create_source_id:
+            raise RuntimeError("write details must not leak")
         self.next_id += 1
         page = {"id": f"page-{self.next_id}", "properties": properties}
         self.page_records.setdefault(parent["data_source_id"], []).append(page)
@@ -174,6 +184,7 @@ def test_mappers_match_operational_property_contract(backend_db: Session) -> Non
 
     assert map_session(session)["Speaker"]["rich_text"][0]["text"]["content"] == "Test Speaker"
     assert map_task(task)["Owner"]["rich_text"][0]["text"]["content"] == "Test Owner"
+    assert map_task(task)["Description"]["rich_text"][0]["text"]["content"] == "Verify room setup."
     assert map_risk(risk)["Severity"] == {"select": {"name": "medium"}}
     mapped_change = map_change(change, verified, analysis_for(verified))
     assert mapped_change["Entity"]["rich_text"][0]["text"]["content"] == "venue/venue_notion_test"
@@ -214,7 +225,8 @@ def test_client_wraps_notion_api_failures_without_leaking_details(fake_api: Fake
 
     with pytest.raises(NotionAPIError) as error:
         client.upsert_page(record_type="tasks", record_id="task-1", properties={})
-    assert "RuntimeError" in str(error.value)
+    assert error.value.category == "network"
+    assert "Notion API request failed" in str(error.value)
     assert "private token detail" not in str(error.value)
 
 
@@ -236,6 +248,7 @@ def test_sync_reports_notion_api_failure(
     assert result.failures
     assert all("Notion API request failed" in failure.error for failure in result.failures)
     assert all("private token detail" not in failure.error for failure in result.failures)
+    assert all(failure.category == "network" for failure in result.failures)
 
 
 def test_missing_configuration_returns_structured_sync_failure(
@@ -277,6 +290,88 @@ def test_sync_upserts_related_records_and_ai_actions(
     assert result.ai_recommended_actions_synced == 1
     assert result.failures == []
     assert fake_api.page_records["source-db-changes"][0]["properties"]["AI Recommended Actions"]
+    assert result.records_created == 4
+
+    repeated = sync_change_to_notion(backend_db, change, verified, notion_client=notion)
+    assert repeated.success is True
+    assert repeated.records_created == 0
+    assert repeated.records_updated == 4
+    assert all(len(pages) == 1 for pages in fake_api.page_records.values())
+
+
+def test_sync_reports_duplicate_matches_without_updating_an_arbitrary_page(
+    backend_db: Session, fake_api: FakeNotionAPI, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import app.integrations.notion.sync as notion_sync
+
+    monkeypatch.setattr(notion_sync, "analyze_verified_impact", analysis_for)
+    identity = {"rich_text": [{"text": {"content": "task_notion_test"}}]}
+    fake_api.page_records["source-db-tasks"] = [
+        {"id": "duplicate-1", "properties": {"Task ID": identity}},
+        {"id": "duplicate-2", "properties": {"Task ID": identity}},
+    ]
+    change = backend_db.get(Change, CHANGE_ID)
+    verified = reconstruct_verified_impact(backend_db, change)
+
+    result = sync_change_to_notion(
+        backend_db, change, verified, notion_client=NotionClient(notion_settings(), api=fake_api)
+    )
+
+    failure = next(item for item in result.failures if item.record_type == "tasks")
+    assert result.success is False
+    assert result.change_synced is True
+    assert failure.category == "duplicate_match"
+    assert failure.duplicate_matches == 2
+    assert [page["id"] for page in fake_api.page_records["source-db-tasks"]] == [
+        "duplicate-1", "duplicate-2"
+    ]
+
+
+def test_sync_reports_partial_record_failure_without_hiding_successes(
+    backend_db: Session, fake_api: FakeNotionAPI, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import app.integrations.notion.sync as notion_sync
+
+    monkeypatch.setattr(notion_sync, "analyze_verified_impact", analysis_for)
+    fake_api.fail_create_source_id = "source-db-tasks"
+    change = backend_db.get(Change, CHANGE_ID)
+    verified = reconstruct_verified_impact(backend_db, change)
+
+    result = sync_change_to_notion(
+        backend_db, change, verified, notion_client=NotionClient(notion_settings(), api=fake_api)
+    )
+
+    assert result.success is False
+    assert result.sessions_synced == result.risks_synced == 1
+    assert result.change_synced is True
+    assert result.records_created == 3
+    assert any(item.record_type == "tasks" for item in result.failures)
+
+
+def test_rate_limit_is_classified_in_sync_result(
+    backend_db: Session, fake_api: FakeNotionAPI, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import app.integrations.notion.sync as notion_sync
+
+    class RateLimitError(RuntimeError):
+        status = 429
+        code = "rate_limited"
+
+    monkeypatch.setattr(notion_sync, "analyze_verified_impact", analysis_for)
+    fake_api.fail_query_source_id = "source-db-tasks"
+    fake_api.query_exception = RateLimitError("private response content")
+    change = backend_db.get(Change, CHANGE_ID)
+    verified = reconstruct_verified_impact(backend_db, change)
+
+    result = sync_change_to_notion(
+        backend_db, change, verified, notion_client=NotionClient(notion_settings(), api=fake_api)
+    )
+    task_failure = next(item for item in result.failures if item.record_type == "tasks")
+
+    assert result.success is False
+    assert task_failure.category == "rate_limit"
+    assert task_failure.status_code == 429
+    assert "private response content" not in task_failure.error
 
 
 def test_sync_endpoint_returns_per_record_result(

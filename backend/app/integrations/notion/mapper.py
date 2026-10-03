@@ -52,6 +52,7 @@ def map_task(task: Task) -> dict[str, Any]:
         "Priority": _select(task.priority),
         "Owner": _rich_text(task.assigned_volunteer.name if task.assigned_volunteer else None),
         "Due Time": _date(task.due_time),
+        "Description": _rich_text(task.description),
         "Source Change": _rich_text(task.source_change_id),
     }
 

@@ -2,6 +2,7 @@
 
 import logging
 from typing import Any
+from collections.abc import Callable
 
 from pydantic import BaseModel, Field
 from sqlalchemy import select
@@ -10,6 +11,8 @@ from sqlalchemy.orm import Session, selectinload
 from app.integrations.notion.client import (
     NotionAPIError,
     NotionConfigurationError,
+    NotionDuplicatePageError,
+    NotionMalformedPageError,
     NotionClient,
     NotionSettings,
 )
@@ -27,6 +30,9 @@ class NotionSyncFailure(BaseModel):
     record_type: str
     record_id: str | None = None
     error: str
+    category: str = "record_error"
+    status_code: int | None = None
+    duplicate_matches: int | None = None
 
 
 class NotionSyncResult(BaseModel):
@@ -38,6 +44,8 @@ class NotionSyncResult(BaseModel):
     risks_synced: int = 0
     ai_recommended_actions_synced: int = 0
     analysis_provider: str | None = None
+    records_created: int = 0
+    records_updated: int = 0
     failures: list[NotionSyncFailure] = Field(default_factory=list)
 
 
@@ -48,11 +56,39 @@ def build_notion_client() -> NotionClient:
 
 
 def _failure(record_type: str, record_id: str | None, exc: Exception) -> NotionSyncFailure:
-    if isinstance(exc, (NotionAPIError, NotionConfigurationError)):
+    if isinstance(exc, NotionAPIError):
         message = str(exc)
+        category = exc.category
+        status_code = exc.status_code
+        duplicate_matches = None
+    elif isinstance(exc, NotionConfigurationError):
+        message = str(exc)
+        category = "configuration"
+        status_code = None
+        duplicate_matches = None
+    elif isinstance(exc, NotionDuplicatePageError):
+        message = str(exc)
+        category = "duplicate_match"
+        status_code = None
+        duplicate_matches = exc.match_count
+    elif isinstance(exc, NotionMalformedPageError):
+        message = str(exc)
+        category = "malformed_page"
+        status_code = None
+        duplicate_matches = None
     else:
         message = f"Unexpected {type(exc).__name__}"
-    return NotionSyncFailure(record_type=record_type, record_id=record_id, error=message)
+        category = "record_error"
+        status_code = None
+        duplicate_matches = None
+    return NotionSyncFailure(
+        record_type=record_type,
+        record_id=record_id,
+        error=message,
+        category=category,
+        status_code=status_code,
+        duplicate_matches=duplicate_matches,
+    )
 
 
 def _sync_record(
@@ -73,6 +109,7 @@ def sync_change_to_notion(
     verified: VerifiedImpactResponse,
     *,
     notion_client: NotionClient | None = None,
+    analysis_function: Callable[[VerifiedImpactResponse], AIImpactAnalysisResponse] | None = None,
 ) -> NotionSyncResult:
     """Upsert relevant backend records; Notion is never read as an authority."""
     try:
@@ -87,7 +124,7 @@ def sync_change_to_notion(
     failures: list[NotionSyncFailure] = []
     analysis: AIImpactAnalysisResponse | None = None
     try:
-        analysis = analyze_verified_impact(verified)
+        analysis = (analysis_function or analyze_verified_impact)(verified)
     except Exception as exc:
         logger.warning("Notion sync AI analysis unavailable for change %s (%s)", change.id, type(exc).__name__)
         failures.append(_failure("ai_analysis", change.id, exc))
@@ -131,24 +168,28 @@ def sync_change_to_notion(
     ):
         for record in records:
             try:
-                _sync_record(
+                operation = _sync_record(
                     notion,
                     record_type=record_type,
                     record_id=record.id,
                     properties=mapper(record),
                 )
                 setattr(result, counter, getattr(result, counter) + 1)
+                result.records_created += operation == "created"
+                result.records_updated += operation == "updated"
             except Exception as exc:
                 failures.append(_failure(record_type, record.id, exc))
 
     try:
-        _sync_record(
+        operation = _sync_record(
             notion,
             record_type="changes",
             record_id=change.id,
             properties=map_change(change, verified, analysis),
         )
         result.change_synced = True
+        result.records_created += operation == "created"
+        result.records_updated += operation == "updated"
         result.ai_recommended_actions_synced = (
             len(analysis.analysis.recommended_actions) if analysis else 0
         )
