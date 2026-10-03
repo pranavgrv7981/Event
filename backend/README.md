@@ -80,30 +80,90 @@ Set `AI_PROVIDER=gemini` and provide `GEMINI_API_KEY` to enable Gemini analysis 
 
 Notion is an optional one-way operational view. The backend database remains authoritative; dependency traversal, conflict detection, impact severity, and record selection are calculated by the backend. Notion edits are never read back into the backend.
 
-Create a Notion integration, enable read-content and insert/update-content capabilities, and share each of the four source databases with it. Set these variables in the backend environment (the `.env.example` file lists them):
+Create a Notion internal integration with read-content, insert-content, and update-content capabilities. Share each of the four source databases with it. Set these variables in the backend process environment (the `.env.example` file lists them):
 
 The application reads the process environment; it does not load a `.env` file itself. Export the values in the shell or configure them through the process manager that starts Uvicorn.
 
 - `NOTION_API_KEY`
-- `NOTION_SESSIONS_DATABASE_ID`
-- `NOTION_TASKS_DATABASE_ID`
-- `NOTION_RISKS_DATABASE_ID`
-- `NOTION_CHANGES_DATABASE_ID`
+- `NOTION_PARENT_PAGE_ID` (setup only): the page where the integration may create the four databases
+- `NOTION_SESSIONS_DATABASE_ID`, `NOTION_TASKS_DATABASE_ID`, `NOTION_RISKS_DATABASE_ID`, and `NOTION_CHANGES_DATABASE_ID` (optional after setup)
 
-Each configured database must have exactly one data source. The integration resolves the data source from the configured database ID using Notion API version `2025-09-03`. Create these properties with the exact names and types; every database needs the named title property and the listed additional columns:
+The application reads the process environment; it does not load a `.env` file. Put the token in the backend process environment or secret manager, never in the repository or command history. After setup, database IDs can be read from an ignored local file at `backend/.notion-databases.json`; explicit database ID environment variables override those local IDs. The file contains only a parent page ID and database IDs, never credentials.
+
+### Automated workspace setup
+
+The integration contract in `app/integrations/notion/databases.py` is authoritative. From `backend/`, run:
+
+```powershell
+python -m app.integrations.notion.setup
+```
+
+The command authenticates, searches for exact-name `Sessions`, `Tasks`, `Risks`, and `Changes` databases under `NOTION_PARENT_PAGE_ID`, reuses one exact match, and creates missing databases with the required property schemas. It adds missing properties and backend select options while preserving existing select options. It does not change incompatible existing property types or delete unrelated properties; it stops with an actionable error instead. Duplicate exact-name databases beneath the parent are reported rather than guessed between. Successful setup stores only the generated IDs in the ignored local JSON file, which the existing sync client reads as a fallback to the four optional database ID environment variables.
+
+The setup operation itself creates databases and may update their schemas, so the integration needs insert/update content access to the shared parent and databases. It then runs the existing preflight and reports credentials, database/data-source discovery, schema, and read access. A read-only preflight cannot prove page-write permissions. To explicitly test page create/update/read/trash permissions, add:
+
+```powershell
+python -m app.integrations.notion.setup --verify-write
+```
+
+For the full sync and idempotence test, use:
+
+```powershell
+python -m app.integrations.notion.setup --verify-sync
+```
+
+This runs the existing backend `sync_change_to_notion` service twice using uniquely marked records in an isolated in-memory SQLite database, verifies one session/task/risk/change create followed by four updates, and moves only those run-specific Notion pages to trash. It does not use or modify operational backend records. `--verify-sync` also enables the temporary page-write preflight. Trash is reversible in Notion; the API does not permanently delete these probe pages. Run write verification in a staging workspace first. If cleanup fails, the report identifies the marked backend record ID that needs manual cleanup. Setup never deletes pre-existing pages.
+
+The one-command flow requires `NOTION_API_KEY` and `NOTION_PARENT_PAGE_ID`; the integration must be granted access to that parent page. The command prints non-secret database IDs in its JSON report and persists them locally for the runtime sync. Do not paste the token into chat.
+
+Each configured database must resolve to exactly one **active** data source. Archived secondary sources are ignored; zero or multiple active sources fail preflight. The integration verifies credentials through the current-user endpoint, retrieves each database and data-source schema, and issues a one-row data-source query to verify read access.
+
+### Database properties
+
+Property names below preserve the existing backend integration contract. The setup CLI deliberately follows this contract rather than introducing the alternate labels from external setup notes. Types and names must match exactly; select options cover the supported backend values and the values currently present in the backend database.
 
 | Database | Title property | Additional properties |
 |---|---|---|
 | Sessions | `Name` (title) | `Session ID` (rich text), `Venue` (rich text), `Start Time` (date), `End Time` (date), `Speaker` (rich text), `Status` (select) |
-| Tasks | `Title` (title) | `Task ID` (rich text), `Status` (select), `Priority` (select), `Owner` (rich text), `Due Time` (date), `Source Change` (rich text) |
+| Tasks | `Title` (title) | `Task ID` (rich text), `Status` (select), `Priority` (select), `Owner` (rich text), `Due Time` (date), `Description` (rich text), `Source Change` (rich text) |
 | Risks | `Title` (title) | `Risk ID` (rich text), `Severity` (select), `Status` (select), `Description` (rich text), `Source Change` (rich text) |
 | Changes | `Title` (title) | `Change ID` (rich text), `Entity` (rich text), `Field` (rich text), `Old Value` (rich text), `New Value` (rich text), `Status` (select), `Severity` (select), `Created Time` (date), `AI Recommended Actions` (rich text) |
 
-Select properties should include backend values: task status `open`, `todo`, `in_progress`, `blocked`, `done`, `cancelled`; task priority and risk severity `low`, `medium`, `high`, `critical`; risk status `open`, `monitoring`, `mitigating`, `mitigated`, `closed`; session status values used by your event data; and change status `Recorded`. Change severity is the deterministic backend impact severity. Changes do not have a persisted status/severity field; `Recorded` denotes the existing change record, and severity is mapped from verified impact. AI recommended actions are stored as text on the change page.
+Select properties must include task status `open`, `todo`, `in_progress`, `blocked`, `done`, `cancelled`; task priority and risk severity `low`, `medium`, `high`, `critical`; risk status `open`, `monitoring`, `mitigating`, `mitigated`, `closed`; the current session status values in the backend database (including the default `scheduled`); and change status `Recorded` plus change severity `low`, `medium`, `high`. Changes have no persisted status/severity; `Recorded` denotes the immutable change record and severity comes from verified backend impact. The task description is supported by the backend model. Risks have no owner field, so no owner property is mapped. The setup follows the current contract names `Due Time`, `Source Change`, `Created Time`, and `Source Change`; it does not invent a Risk `Owner` field.
 
-Call `POST /changes/{change_id}/sync-notion` to reconstruct verified impact from the current backend database, obtain the configured AI analysis or deterministic fallback, and upsert the change plus its related sessions, tasks, and risks. Upsert identity is the corresponding backend ID property (`Session ID`, `Task ID`, `Risk ID`, `Change ID`); repeat calls update the matching page rather than creating duplicates. The result reports per-kind synced counts, whether the change/actions were synced, the analysis provider, and per-record failures. Failed Notion records do not stop attempts for other records. This is backend-to-Notion only; no webhook or Notion-to-backend path is implemented.
+### Preflight and live verification
 
-Without Notion configured, the API and other backend features still start normally. The sync endpoint returns a structured unsuccessful result listing missing environment-variable names; it does not require a Notion token for backend startup or tests. Tests use a fake SDK client and make no Notion network calls.
+Run the read-only preflight from the `backend/` directory after exporting the environment variables:
+
+```powershell
+python -m app.integrations.notion.preflight
+```
+
+It validates credentials, database access, the active data source, property types, select options, and query/read access. It deliberately reports write permissions as `not_checked`: Notion exposes no read-only capability-inspection endpoint. The overall result is not `ready` until write permissions have been verified.
+
+To verify insert/update access, run the explicit probe **only against staging/test databases**:
+
+```powershell
+python -m app.integrations.notion.preflight --verify-write-permissions
+```
+
+This creates one uniquely marked temporary page per database, updates it, then moves it to Notion trash. If cleanup fails, the diagnostic includes the page ID and instructs the operator to trash it manually. Do not run this mode against production databases unless archived probe records are acceptable.
+
+For real workspace verification, use a staging Notion workspace and a test change in a staging backend database. Confirm the preflight passes; call `POST /changes/{change_id}/sync-notion`; verify the returned per-type counts and inspect the synced session, task, risk, and change pages. Call it again and confirm the same pages are updated, not duplicated, and changed backend values appear in Notion. Also verify access-denied behavior by temporarily removing a staging database share and verify rate-limit/API failure reporting without using production data. Never paste or print the integration token.
+
+### Sync behavior and limitations
+
+The endpoint reconstructs verified impact from backend state, obtains the existing AI analysis/fallback, then upserts relevant sessions, tasks, risks, and the change. AI output contributes only the change-page `AI Recommended Actions`; it never supplies dependency, conflict, impact, or selection facts. Notion remains one-way and is never read as an operational authority.
+
+Upsert identity is the backend ID property (`Session ID`, `Task ID`, `Risk ID`, `Change ID`). A single match is updated; no match is created; multiple matches produce an explicit `duplicate_match` failure and are not arbitrarily updated. The response includes created/updated totals, per-type synced counts, analysis provider, and per-record failure category/status. One failed record does not stop attempts for other records, and any per-record failure keeps overall `success` false. The official SDK retries rate limits and server errors three times with bounded exponential backoff; final rate limits are reported per record.
+
+Sequential repeated syncs are idempotent. Notion does not enforce uniqueness on these rich-text backend ID properties, so concurrent sync requests can race between query and create; strict concurrency-safe deduplication is not guaranteed. Duplicate existing matches are detected and reported. No delete/reconciliation pass is performed.
+
+Actual Notion Relation properties are deferred. Backend IDs remain in rich-text `Source Change` fields, while the sync selects related records from verified backend relationships. Notion Relations would require schema changes, related-page lookups, and more failure modes; they are not needed for the four-database sync contract. No relation links are currently written.
+
+The SDK uses Notion API version `2025-09-03`, which introduced the database/data-source split used by `databases.retrieve/create`, `data_sources.retrieve/update/query`, and page creation under a data source. Official docs confirm database creation accepts an `initial_data_source` schema and data-source updates add properties; select option updates replace the full option list, so setup explicitly retains existing options before adding backend values. Current Notion docs list `2026-03-11` as the latest version; this integration keeps the existing pinned version to avoid an unverified migration. Review the official [database creation](https://developers.notion.com/reference/create-a-database), [data-source schema updates](https://developers.notion.com/reference/update-data-source-properties), and [versioning guide](https://developers.notion.com/reference/versioning) before changing it and rerun staging verification.
+
+Without Notion configured, the API and other backend features still start normally. The sync endpoint returns a structured unsuccessful result listing missing variable names; it does not require a Notion token for backend startup or tests. Automated tests use fake SDK clients and make no Notion network calls. Preflight and mocked tests do not prove a live workspace is ready; only the staging procedure above does.
 
 ## Operational follow-ups
 
