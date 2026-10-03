@@ -271,6 +271,44 @@ class ChangeRead(ORMModel):
     created_at: datetime
 
 
+ChangeRequestStatus = Literal[
+    "PENDING", "APPROVED", "REJECTED", "PROCESSING", "APPLIED", "FAILED"
+]
+
+
+class ChangeRequestCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    entity_type: str = Field(min_length=1, max_length=32)
+    entity_id: str = Field(min_length=1, max_length=64)
+    field_name: str = Field(min_length=1, max_length=64)
+    new_value: str | None
+    reason: str = Field(min_length=1, max_length=2000)
+    created_by: str | None = Field(default=None, max_length=160)
+
+    @field_validator("reason")
+    @classmethod
+    def reason_must_not_be_blank(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("Reason cannot be blank")
+        return value.strip()
+
+
+class ChangeRequestRead(ORMModel):
+    id: str
+    event_id: str
+    entity_type: str
+    entity_id: str
+    field_name: str
+    old_value: str | None
+    new_value: str | None
+    reason: str
+    created_by: str | None
+    status: ChangeRequestStatus
+    created_at: datetime
+    updated_at: datetime
+
+
 class ConflictItem(BaseModel):
     type: Literal[
         "venue_schedule_overlap",
@@ -320,6 +358,17 @@ class VerifiedImpactResponse(BaseModel):
     conflicts: list[ConflictItem]
     impact: ImpactSummary
     verification: ImpactVerification = Field(default_factory=ImpactVerification)
+
+
+class ChangeRequestApprovalResponse(BaseModel):
+    request: ChangeRequestRead
+    result: VerifiedImpactResponse
+    notion_sync: dict[str, Any] | None = None
+
+
+class ChangeRequestRejectionResponse(BaseModel):
+    request: ChangeRequestRead
+    notion_sync: dict[str, Any]
 
 
 class AIContractModel(BaseModel):
@@ -401,3 +450,12 @@ class AIImpactAnalysisResponse(AIContractModel):
     provider: Literal["gemini", "fallback"]
     verified_impact: VerifiedImpactResponse
     analysis: AIImpactAnalysis
+
+
+class ChangeRequestReviewResponse(BaseModel):
+    request: ChangeRequestRead
+    preview: VerifiedImpactResponse
+    ai_analysis: AIImpactAnalysisResponse
+    consequences: str
+    possible_resolution: str
+    is_preview: Literal[True] = True

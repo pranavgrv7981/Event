@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import date, datetime, timezone
 
-from sqlalchemy import Date, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import CheckConstraint, Date, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -49,6 +49,9 @@ class Event(TimestampMixin, Base):
     tasks: Mapped[list[Task]] = relationship(back_populates="event", cascade="all, delete-orphan")
     risks: Mapped[list[Risk]] = relationship(back_populates="event", cascade="all, delete-orphan")
     changes: Mapped[list[Change]] = relationship(
+        back_populates="event", cascade="all, delete-orphan"
+    )
+    change_requests: Mapped[list[ChangeRequest]] = relationship(
         back_populates="event", cascade="all, delete-orphan"
     )
 
@@ -219,3 +222,26 @@ class Change(TimestampMixin, Base):
     event: Mapped[Event] = relationship(back_populates="changes")
     generated_tasks: Mapped[list[Task]] = relationship(back_populates="source_change")
     generated_risks: Mapped[list[Risk]] = relationship(back_populates="source_change")
+
+
+class ChangeRequest(TimestampMixin, Base):
+    __tablename__ = "change_requests"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('PENDING', 'APPROVED', 'REJECTED', 'PROCESSING', 'APPLIED', 'FAILED')",
+            name="ck_change_requests_status",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    event_id: Mapped[str] = mapped_column(ForeignKey("events.id", ondelete="CASCADE"), index=True)
+    entity_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    entity_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    field_name: Mapped[str] = mapped_column(String(100), nullable=False)
+    old_value: Mapped[str | None] = mapped_column(Text, nullable=True)
+    new_value: Mapped[str | None] = mapped_column(Text, nullable=True)
+    reason: Mapped[str] = mapped_column(Text, nullable=False)
+    created_by: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="PENDING")
+
+    event: Mapped[Event] = relationship(back_populates="change_requests")

@@ -16,8 +16,14 @@ from app.integrations.notion.client import (
     NotionClient,
     NotionSettings,
 )
-from app.integrations.notion.mapper import map_change, map_risk, map_session, map_task
-from app.models import Change, Risk, Session as EventSession, Task
+from app.integrations.notion.mapper import (
+    map_change,
+    map_change_request,
+    map_risk,
+    map_session,
+    map_task,
+)
+from app.models import Change, ChangeRequest, Risk, Session as EventSession, Task
 from app.schemas import AIImpactAnalysisResponse, VerifiedImpactResponse
 from app.services.ai_impact_service import analyze_verified_impact
 from app.services.risk_service import list_risks_for_change
@@ -110,6 +116,7 @@ def sync_change_to_notion(
     *,
     notion_client: NotionClient | None = None,
     analysis_function: Callable[[VerifiedImpactResponse], AIImpactAnalysisResponse] | None = None,
+    change_request: ChangeRequest | None = None,
 ) -> NotionSyncResult:
     """Upsert relevant backend records; Notion is never read as an authority."""
     try:
@@ -185,7 +192,7 @@ def sync_change_to_notion(
             notion,
             record_type="changes",
             record_id=change.id,
-            properties=map_change(change, verified, analysis),
+            properties=map_change(change, verified, analysis, change_request),
         )
         result.change_synced = True
         result.records_created += operation == "created"
@@ -199,3 +206,32 @@ def sync_change_to_notion(
     result.failures = failures
     result.success = not failures
     return result
+
+
+def sync_change_request_to_notion(
+    change_request: ChangeRequest,
+    *,
+    notion_client: NotionClient | None = None,
+) -> NotionSyncResult:
+    """Upsert a rejected request to the shared Changes database without applying it."""
+    try:
+        notion = notion_client or build_notion_client()
+        operation = _sync_record(
+            notion,
+            record_type="changes",
+            record_id=change_request.id,
+            properties=map_change_request(change_request),
+        )
+        return NotionSyncResult(
+            change_id=change_request.id,
+            success=True,
+            change_synced=True,
+            records_created=int(operation == "created"),
+            records_updated=int(operation == "updated"),
+        )
+    except Exception as exc:
+        return NotionSyncResult(
+            change_id=change_request.id,
+            success=False,
+            failures=[_failure("changes", change_request.id, exc)],
+        )

@@ -228,6 +228,7 @@ def process_change(
     field_name: str,
     new_value: object,
     reason: str,
+    created_by: str | None = None,
 ) -> VerifiedImpactResponse:
     """Validate, apply, record, and analyze one operational change atomically."""
     logger.info(
@@ -285,6 +286,7 @@ def process_change(
                 old_value=_serialize_value(old_value),
                 new_value=_serialize_value(parsed_value),
                 reason=reason.strip(),
+                created_by=created_by,
             )
             db.add(change)
             db.flush()

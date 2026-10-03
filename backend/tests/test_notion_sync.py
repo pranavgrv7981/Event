@@ -21,10 +21,11 @@ from app.integrations.notion.client import (
     NotionClient,
     NotionSettings,
 )
+from app.integrations.notion.databases import DATABASES
 from app.integrations.notion.mapper import map_change, map_risk, map_session, map_task
-from app.integrations.notion.sync import sync_change_to_notion
+from app.integrations.notion.sync import sync_change_request_to_notion, sync_change_to_notion
 from app.main import app
-from app.models import Change, Event, Risk, Session as EventSession, Speaker, Task, Venue, Volunteer
+from app.models import Change, ChangeRequest, Event, Risk, Session as EventSession, Speaker, Task, Venue, Volunteer
 from app.schemas import AIImpactAnalysis, AIImpactAnalysisResponse
 from app.services.impact_service import reconstruct_verified_impact
 
@@ -189,6 +190,70 @@ def test_mappers_match_operational_property_contract(backend_db: Session) -> Non
     mapped_change = map_change(change, verified, analysis_for(verified))
     assert mapped_change["Entity"]["rich_text"][0]["text"]["content"] == "venue/venue_notion_test"
     assert mapped_change["AI Recommended Actions"]["rich_text"][0]["text"]["content"] == "Confirm the session room setup."
+    assert mapped_change["Reason"]["rich_text"][0]["text"]["content"] == change.reason
+    assert mapped_change["Impact Summary"]["rich_text"][0]["text"]["content"].startswith("Severity:")
+    assert "Sessions:" in mapped_change["Affected Entities"]["rich_text"][0]["text"]["content"]
+
+    request = ChangeRequest(
+        id="request_notion_test", event_id=EVENT_ID, entity_type="venue",
+        entity_id="venue_notion_test", field_name="capacity", old_value="100",
+        new_value="150", reason="Increase capacity for the demo.",
+        created_by="test", status="APPLIED",
+    )
+    request_mapping = map_change(change, verified, analysis_for(verified), request)
+    assert request_mapping["Request Status"]["rich_text"][0]["text"]["content"] == "APPLIED"
+    assert request_mapping["Reason"]["rich_text"][0]["text"]["content"] == request.reason
+
+    assert {
+        "Request Status", "Reason", "Requester", "Affected Entities", "Impact Summary", "Conflicts"
+    }.issubset(DATABASES["changes"].properties)
+
+
+def test_rejected_change_request_maps_and_upserts_in_changes_database(fake_api: FakeNotionAPI) -> None:
+    request = ChangeRequest(
+        id="request_rejected_notion", event_id=EVENT_ID,
+        entity_type="session", entity_id="session_notion_test",
+        field_name="venue_id", old_value="venue_a", new_value="venue_b",
+        reason="The proposed move overlaps another session.",
+        created_by="admin@example.org", status="REJECTED",
+    )
+    notion = NotionClient(notion_settings(), api=fake_api)
+
+    result = sync_change_request_to_notion(request, notion_client=notion)
+
+    assert result.success is True
+    assert result.change_synced is True
+    properties = fake_api.page_records["source-db-changes"][0]["properties"]
+    assert properties["Request Status"]["rich_text"][0]["text"]["content"] == "REJECTED"
+    assert properties["Entity"]["rich_text"][0]["text"]["content"] == "session/session_notion_test"
+    assert properties["Old Value"]["rich_text"][0]["text"]["content"] == "venue_a"
+    assert properties["New Value"]["rich_text"][0]["text"]["content"] == "venue_b"
+    assert properties["Reason"]["rich_text"][0]["text"]["content"] == request.reason
+    assert properties["Requester"]["rich_text"][0]["text"]["content"] == request.created_by
+
+    repeated = sync_change_request_to_notion(request, notion_client=notion)
+    assert repeated.success is True
+    assert repeated.records_updated == 1
+    assert len(fake_api.page_records["source-db-changes"]) == 1
+
+
+def test_rejected_request_sync_failure_is_reported(fake_api: FakeNotionAPI) -> None:
+    request = ChangeRequest(
+        id="request_rejected_failure", event_id=EVENT_ID,
+        entity_type="session", entity_id="session_notion_test",
+        field_name="venue_id", old_value="venue_a", new_value="venue_b",
+        reason="Reject for test", status="REJECTED",
+    )
+    fake_api.fail_queries = True
+
+    result = sync_change_request_to_notion(
+        request, notion_client=NotionClient(notion_settings(), api=fake_api)
+    )
+
+    assert result.success is False
+    assert result.change_synced is False
+    assert result.failures[0].record_type == "changes"
+    assert result.failures[0].category == "network"
 
 
 def test_client_creates_then_updates_page_by_backend_id(fake_api: FakeNotionAPI) -> None:

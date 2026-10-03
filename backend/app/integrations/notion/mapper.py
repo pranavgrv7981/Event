@@ -3,7 +3,7 @@
 from datetime import date, datetime
 from typing import Any
 
-from app.models import Change, Risk, Session as EventSession, Task
+from app.models import Change, ChangeRequest, Risk, Session as EventSession, Task
 from app.schemas import AIImpactAnalysisResponse, VerifiedImpactResponse
 
 
@@ -72,8 +72,29 @@ def map_change(
     change: Change,
     verified: VerifiedImpactResponse,
     analysis: AIImpactAnalysisResponse | None,
+    change_request: ChangeRequest | None = None,
 ) -> dict[str, Any]:
     actions = analysis.analysis.recommended_actions if analysis else []
+    affected = verified.affected
+    affected_text = "\n".join(
+        f"{label}: {', '.join(items)}" for label, items in (
+            ("Sessions", [item.id for item in affected.sessions]),
+            ("Speakers", [item.id for item in affected.speakers]),
+            ("Volunteers", [item.id for item in affected.volunteers]),
+            ("Equipment", [item.id for item in affected.equipment]),
+        ) if items
+    )
+    counts = verified.impact.counts
+    impact_summary = (
+        f"Severity: {verified.impact.severity}; "
+        f"sessions={counts.sessions}, speakers={counts.speakers}, "
+        f"volunteers={counts.volunteers}, equipment={counts.equipment}, "
+        f"tasks={counts.tasks}, risks={counts.risks}"
+    )
+    conflicts = "\n".join(
+        f"{item.severity}: {item.type} ({', '.join(item.entity_ids)}) - {item.message}"
+        for item in verified.conflicts
+    )
     return {
         "Title": _title(f"{change.entity_type}: {change.field_name}"),
         "Change ID": _rich_text(change.id),
@@ -85,4 +106,34 @@ def map_change(
         "Severity": _select(verified.impact.severity),
         "Created Time": _date(change.created_at),
         "AI Recommended Actions": _rich_text("\n".join(actions)),
+        "Request Status": _rich_text(change_request.status if change_request else None),
+        "Reason": _rich_text(change_request.reason if change_request else change.reason),
+        "Requester": _rich_text(
+            change_request.created_by if change_request else change.created_by
+        ),
+        "Affected Entities": _rich_text(affected_text),
+        "Impact Summary": _rich_text(impact_summary),
+        "Conflicts": _rich_text(conflicts),
+    }
+
+
+def map_change_request(change_request: ChangeRequest) -> dict[str, Any]:
+    """Map a request that was not applied into the shared Changes database."""
+    return {
+        "Title": _title(f"{change_request.entity_type}: {change_request.field_name}"),
+        "Change ID": _rich_text(change_request.id),
+        "Entity": _rich_text(f"{change_request.entity_type}/{change_request.entity_id}"),
+        "Field": _rich_text(change_request.field_name),
+        "Old Value": _rich_text(change_request.old_value),
+        "New Value": _rich_text(change_request.new_value),
+        "Status": _select("Recorded"),
+        "Severity": _select(None),
+        "Created Time": _date(change_request.created_at),
+        "AI Recommended Actions": _rich_text(None),
+        "Request Status": _rich_text(change_request.status),
+        "Reason": _rich_text(change_request.reason),
+        "Requester": _rich_text(change_request.created_by),
+        "Affected Entities": _rich_text(None),
+        "Impact Summary": _rich_text("Not applied: request was rejected; no event impact was generated."),
+        "Conflicts": _rich_text(None),
     }

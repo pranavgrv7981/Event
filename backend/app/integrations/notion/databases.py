@@ -79,6 +79,12 @@ DATABASES = {
             "Severity": PropertyDefinition("select", ("low", "medium", "high")),
             "Created Time": PropertyDefinition("date"),
             "AI Recommended Actions": PropertyDefinition("rich_text"),
+            "Request Status": PropertyDefinition("rich_text"),
+            "Reason": PropertyDefinition("rich_text"),
+            "Requester": PropertyDefinition("rich_text"),
+            "Affected Entities": PropertyDefinition("rich_text"),
+            "Impact Summary": PropertyDefinition("rich_text"),
+            "Conflicts": PropertyDefinition("rich_text"),
         },
     ),
 }

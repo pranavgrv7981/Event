@@ -1,14 +1,21 @@
 """Basic read endpoints for seeded event operations data."""
 
 import logging
+from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session, selectinload
 
 from app.database import get_db
-from app.integrations.notion.sync import NotionSyncResult, sync_change_to_notion
+from app.integrations.notion.sync import (
+    NotionSyncFailure,
+    NotionSyncResult,
+    sync_change_to_notion,
+    sync_change_request_to_notion,
+)
+from app.models import ChangeRequest as ChangeRequestModel
 from app.models import Equipment, Event, Risk, Session as EventSession, Speaker, Task, Venue, Volunteer
 from app.schemas import (
     EquipmentRead,
@@ -16,6 +23,12 @@ from app.schemas import (
     EventRead,
     DependencyResult,
     ChangeRead,
+    ChangeRequestCreate,
+    ChangeRequestApprovalResponse,
+    ChangeRequestRead,
+    ChangeRequestRejectionResponse,
+    ChangeRequestReviewResponse,
+    ChangeRequestStatus,
     ChangeRequest,
     AIImpactAnalysisResponse,
     EventDashboard,
@@ -33,12 +46,14 @@ from app.schemas import (
     VolunteerRead,
 )
 from app.services.dependency_engine import (
+    ENTITY_MODELS,
     EntityNotFound,
     InvalidEntityIdentifier,
     UnsupportedEntityType,
     get_affected_entities,
 )
 from app.services.impact_service import (
+    CHANGEABLE_FIELDS,
     EntityOwnershipError,
     EventNotFound,
     InvalidChangeValue,
@@ -48,6 +63,7 @@ from app.services.impact_service import (
     reconstruct_verified_impact,
 )
 from app.services.ai_impact_service import analyze_verified_impact
+from app.services.change_request_preview import build_change_request_preview
 from app.models import Change
 from app.services.risk_service import (
     RiskEventNotFound,
@@ -76,6 +92,261 @@ from app.services.conflict_service import detect_conflicts
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+
+def _change_request_value(value: object) -> str | None:
+    if value is None:
+        return None
+    if hasattr(value, "isoformat"):
+        return value.isoformat()
+    return str(value)
+
+
+@router.post(
+    "/events/{event_id}/change-requests",
+    response_model=ChangeRequestRead,
+    status_code=201,
+)
+def create_change_request(
+    event_id: str, request: ChangeRequestCreate, db: Session = Depends(get_db)
+) -> ChangeRequestModel:
+    event = db.get(Event, event_id)
+    if event is None:
+        raise HTTPException(status_code=404, detail="Event not found")
+    if request.entity_type not in ENTITY_MODELS or request.entity_type == "change":
+        raise HTTPException(status_code=422, detail="Unsupported change target entity")
+    if request.field_name not in CHANGEABLE_FIELDS[request.entity_type]:
+        raise HTTPException(status_code=422, detail="Unsupported change field")
+    target = db.get(ENTITY_MODELS[request.entity_type], request.entity_id)
+    if target is None:
+        raise HTTPException(status_code=404, detail="Target entity not found")
+    target_event_id = target.id if request.entity_type == "event" else target.event_id
+    if target_event_id != event_id:
+        raise HTTPException(status_code=422, detail="Target entity belongs to another event")
+
+    change_request = ChangeRequestModel(
+        id=f"change_request_{uuid4().hex}",
+        event_id=event_id,
+        entity_type=request.entity_type,
+        entity_id=request.entity_id,
+        field_name=request.field_name,
+        old_value=_change_request_value(getattr(target, request.field_name)),
+        new_value=request.new_value,
+        reason=request.reason,
+        created_by=request.created_by,
+        status="PENDING",
+    )
+    db.add(change_request)
+    db.commit()
+    db.refresh(change_request)
+    return change_request
+
+
+@router.get("/change-requests", response_model=list[ChangeRequestRead])
+def list_change_requests(
+    event_id: str | None = None,
+    status: ChangeRequestStatus | None = None,
+    db: Session = Depends(get_db),
+) -> list[ChangeRequestModel]:
+    statement = select(ChangeRequestModel).order_by(
+        ChangeRequestModel.created_at.desc(), ChangeRequestModel.id.desc()
+    )
+    if event_id is not None:
+        statement = statement.where(ChangeRequestModel.event_id == event_id)
+    if status is not None:
+        statement = statement.where(ChangeRequestModel.status == status)
+    return list(db.scalars(statement).all())
+
+
+@router.get("/change-requests/{request_id}", response_model=ChangeRequestRead)
+def get_change_request(request_id: str, db: Session = Depends(get_db)) -> ChangeRequestModel:
+    change_request = db.get(ChangeRequestModel, request_id)
+    if change_request is None:
+        raise HTTPException(status_code=404, detail="Change request not found")
+    return change_request
+
+
+@router.get(
+    "/change-requests/{request_id}/review",
+    response_model=ChangeRequestReviewResponse,
+)
+def review_change_request(
+    request_id: str, db: Session = Depends(get_db)
+) -> ChangeRequestReviewResponse:
+    change_request = db.get(ChangeRequestModel, request_id)
+    if change_request is None:
+        raise HTTPException(status_code=404, detail="Change request not found")
+    if change_request.status != "PENDING":
+        raise HTTPException(status_code=409, detail="Only PENDING requests can be reviewed")
+    try:
+        preview, consequences, resolution = build_change_request_preview(db, change_request)
+        analysis = analyze_verified_impact(preview)
+        return ChangeRequestReviewResponse(
+            request=change_request,
+            preview=preview,
+            ai_analysis=analysis,
+            consequences=consequences,
+            possible_resolution=resolution,
+        )
+    except (EventNotFound, EntityNotFound) as exc:
+        raise HTTPException(status_code=404, detail="Change target entity not found") from exc
+    except (
+        EntityOwnershipError,
+        InvalidEntityIdentifier,
+        InvalidChangeValue,
+        UnchangedValue,
+        UnsupportedChangeField,
+        UnsupportedEntityType,
+    ) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+def _transition_change_request(
+    request_id: str, target_status: str, db: Session
+) -> ChangeRequestModel:
+    result = db.execute(
+        update(ChangeRequestModel)
+        .where(ChangeRequestModel.id == request_id, ChangeRequestModel.status == "PENDING")
+        .values(status=target_status)
+    )
+    if result.rowcount == 0:
+        db.rollback()
+        change_request = db.get(ChangeRequestModel, request_id)
+        if change_request is None:
+            raise HTTPException(status_code=404, detail="Change request not found")
+        raise HTTPException(
+            status_code=409,
+            detail=f"Only PENDING change requests can transition to {target_status}",
+        )
+    db.commit()
+    return db.get(ChangeRequestModel, request_id)
+
+
+@router.post(
+    "/change-requests/{request_id}/reject",
+    response_model=ChangeRequestRejectionResponse,
+)
+def reject_change_request(
+    request_id: str, db: Session = Depends(get_db)
+) -> ChangeRequestRejectionResponse:
+    rejected_request = _transition_change_request(request_id, "REJECTED", db)
+    try:
+        notion_sync_result = sync_change_request_to_notion(rejected_request)
+    except Exception as exc:
+        logger.exception("Notion sync failed after rejecting change request %s", request_id)
+        notion_sync_result = NotionSyncResult(
+            change_id=rejected_request.id,
+            success=False,
+            failures=[
+                NotionSyncFailure(
+                    record_type="changes",
+                    record_id=rejected_request.id,
+                    error=f"Unexpected {type(exc).__name__}",
+                )
+            ],
+        )
+    return ChangeRequestRejectionResponse(
+        request=rejected_request,
+        notion_sync=notion_sync_result.model_dump(),
+    )
+
+
+@router.post(
+    "/change-requests/{request_id}/accept",
+    response_model=ChangeRequestApprovalResponse,
+)
+def accept_change_request(
+    request_id: str, db: Session = Depends(get_db)
+) -> ChangeRequestApprovalResponse:
+    change_request = db.get(ChangeRequestModel, request_id)
+    if change_request is None:
+        raise HTTPException(status_code=404, detail="Change request not found")
+    if change_request.status != "PENDING":
+        raise HTTPException(
+            status_code=409,
+            detail="Only PENDING change requests can be accepted",
+        )
+
+    execution_data = {
+        "event_id": change_request.event_id,
+        "entity_type": change_request.entity_type,
+        "entity_id": change_request.entity_id,
+        "field_name": change_request.field_name,
+        "new_value": change_request.new_value,
+        "reason": change_request.reason,
+        "created_by": change_request.created_by,
+    }
+    transitioned = db.execute(
+        update(ChangeRequestModel)
+        .where(ChangeRequestModel.id == request_id, ChangeRequestModel.status == "PENDING")
+        .values(status="PROCESSING")
+    )
+    if transitioned.rowcount != 1:
+        db.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail="Only PENDING change requests can be accepted",
+        )
+    db.commit()
+
+    try:
+        result = process_change(db, **execution_data)
+    except Exception as exc:
+        db.rollback()
+        db.execute(
+            update(ChangeRequestModel)
+            .where(ChangeRequestModel.id == request_id, ChangeRequestModel.status == "PROCESSING")
+            .values(status="FAILED")
+        )
+        db.commit()
+        if isinstance(exc, (InvalidChangeValue, UnchangedValue, UnsupportedChangeField, UnsupportedEntityType)):
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        if isinstance(exc, (EventNotFound, EntityNotFound)):
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        if isinstance(exc, (EntityOwnershipError, InvalidEntityIdentifier)):
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        if isinstance(exc, SQLAlchemyError):
+            logger.exception("Approved change request execution failed: %s", request_id)
+            raise HTTPException(status_code=500, detail="Change request execution failed") from exc
+        logger.exception("Unexpected approved change request failure: %s", request_id)
+        raise HTTPException(status_code=500, detail="Change request execution failed") from exc
+
+    db.execute(
+        update(ChangeRequestModel)
+        .where(ChangeRequestModel.id == request_id, ChangeRequestModel.status == "PROCESSING")
+        .values(status="APPLIED")
+    )
+    db.commit()
+    applied_request = db.get(ChangeRequestModel, request_id)
+    notion_sync_result: NotionSyncResult
+    try:
+        applied_change = db.get(Change, result.change_id)
+        if applied_change is None:
+            raise EntityNotFound("Applied change audit record not found")
+        notion_sync_result = sync_change_to_notion(
+            db,
+            applied_change,
+            result,
+            change_request=applied_request,
+        )
+    except Exception as exc:
+        logger.exception("Notion sync failed after applying change request %s", request_id)
+        notion_sync_result = NotionSyncResult(
+            change_id=result.change_id,
+            success=False,
+            failures=[
+                NotionSyncFailure(
+                    record_type="changes",
+                    record_id=result.change_id,
+                    error=f"Unexpected {type(exc).__name__}",
+                )
+            ],
+        )
+    return ChangeRequestApprovalResponse(
+        request=applied_request,
+        result=result,
+        notion_sync=notion_sync_result.model_dump(),
+    )
 
 
 @router.post(

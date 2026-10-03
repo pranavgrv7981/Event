@@ -25,6 +25,7 @@ session_equipment = Table(
 
 from app.models.domain import (  # noqa: E402
     Change,
+    ChangeRequest,
     Equipment,
     Event,
     Risk,
@@ -37,6 +38,7 @@ from app.models.domain import (  # noqa: E402
 
 __all__ = [
     "Change",
+    "ChangeRequest",
     "Equipment",
     "Event",
     "Risk",
